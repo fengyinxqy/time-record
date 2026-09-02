@@ -5,6 +5,7 @@ import "./App.css";
 import { elapsedSeconds, formatDuration, localDateKey } from "./timer";
 import { initialTimerState, timerReducer, type Project, type TimeSegment } from "./appState";
 import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
+import { resolveViewMode, type ViewMode } from "./viewMode";
 
 type TimerSnapshot = {
   activeProject: Project | null;
@@ -13,7 +14,6 @@ type TimerSnapshot = {
 };
 
 const COLORS = ["#7c6cf2", "#63c6a0", "#e39a62", "#d26378", "#5da6d8"];
-const isHistoryWindow = new URLSearchParams(window.location.search).get("view") === "history";
 
 function friendlyError(error: unknown): string {
   return typeof error === "string" ? error : "操作失败，请稍后重试";
@@ -295,5 +295,14 @@ function HistoryWindow() {
 }
 
 export default function App() {
-  return isHistoryWindow ? <HistoryWindow /> : <TimerWindow />;
+  const [viewMode, setViewMode] = useState<ViewMode | null>(null);
+
+  useEffect(() => {
+    setViewMode(resolveViewMode(getCurrentWindow().label, window.location.search));
+  }, []);
+
+  if (viewMode === null) {
+    return <main className="loading-shell">正在打开…</main>;
+  }
+  return viewMode === "history" ? <HistoryWindow /> : <TimerWindow />;
 }

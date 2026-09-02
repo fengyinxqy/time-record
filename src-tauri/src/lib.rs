@@ -112,7 +112,7 @@ fn open_history_window(app: AppHandle) -> Result<(), String> {
     WebviewWindowBuilder::new(
         &app,
         "history",
-        WebviewUrl::App("index.html?view=history".into()),
+        WebviewUrl::App("index.html".into()),
     )
     .title("历史记录")
     .inner_size(960.0, 680.0)

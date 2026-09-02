@@ -6,6 +6,8 @@ body { margin: 0; min-width: 320px; background: #11111a; }
 button, input { font: inherit; }
 button { cursor: pointer; }
 
+.loading-shell { display: grid; min-height: 100vh; place-items: center; color: #a8a3d5; background: #11111a; font-size: 12px; }
+
 .timer-shell { width: 100%; min-height: 100vh; padding: 22px 18px; background: radial-gradient(circle at 10% 0%, #28234b 0, #11111a 44%); }
 .timer-header, .history-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .eyebrow { margin: 0 0 5px; color: #a8a3d5; font: 500 10px/1 "DM Mono", monospace; letter-spacing: .18em; }

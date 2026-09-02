@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Gantt } from "@svar-ui/react-gantt";
+import "@svar-ui/react-gantt/all.css";
 import "./App.css";
 import { elapsedSeconds, formatDuration, localDateKey } from "./timer";
 import { initialTimerState, timerReducer, type Project, type TimeSegment } from "./appState";
 import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
 import { resolveViewMode, type ViewMode } from "./viewMode";
+import { segmentEndLabel } from "./historyModel";
 
 type TimerSnapshot = {
   activeProject: Project | null;
@@ -91,6 +94,7 @@ function TimerWindow() {
 
   useEffect(() => {
     void refresh();
+    const retry = window.setTimeout(() => void refresh(), 500);
     const interval = window.setInterval(() => {
       if (timer.activeSegment) {
         dispatch({
@@ -100,7 +104,10 @@ function TimerWindow() {
         void invoke("heartbeat").catch(() => undefined);
       }
     }, 1000);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearTimeout(retry);
+      window.clearInterval(interval);
+    };
   }, [refresh, timer.activeSegment]);
 
   const togglePinned = async () => {
@@ -203,10 +210,40 @@ function TimerWindow() {
   );
 }
 
+function buildGanttTasks(
+  rows: ReturnType<typeof groupSegmentsByProject>,
+  dayStart: number,
+  dayEnd: number,
+  now: number,
+) {
+  return rows.map((row) => {
+    const visibleSegments = row.segments
+      .map((segment) => clipSegmentToDay(segment, dayStart, dayEnd, now))
+      .filter((segment): segment is { startedAt: number; endedAt: number } => segment !== null);
+    const start = Math.min(...visibleSegments.map((segment) => segment.startedAt));
+    const end = Math.max(...visibleSegments.map((segment) => segment.endedAt));
+    return {
+      id: row.project.id,
+      text: row.project.name,
+      type: "task",
+      start: new Date(start * 1000),
+      end: new Date(Math.max(end, start + 60) * 1000),
+      duration: Math.max(1, (end - start) / 3600),
+      progress: 0,
+      segments: visibleSegments.map((segment) => ({
+        start: new Date(segment.startedAt * 1000),
+        end: new Date(segment.endedAt * 1000),
+        duration: Math.max(1, (segment.endedAt - segment.startedAt) / 3600),
+      })),
+    };
+  });
+}
+
 function HistoryWindow() {
   const [date, setDate] = useState(() => localDateKey(new Date()));
   const [projects, setProjects] = useState<Project[]>([]);
   const [segments, setSegments] = useState<TimeSegment[]>([]);
+  const [now, setNow] = useState(nowSeconds());
   const [error, setError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
@@ -226,7 +263,15 @@ function HistoryWindow() {
     }
   }, [date]);
 
-  useEffect(() => { void loadHistory(); }, [loadHistory]);
+  useEffect(() => {
+    void loadHistory();
+    const interval = window.setInterval(() => void loadHistory(), 2000);
+    return () => window.clearInterval(interval);
+  }, [loadHistory]);
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(nowSeconds()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const dayStart = new Date(`${date}T00:00:00`).getTime() / 1000;
   const dayEnd = dayStart + 24 * 60 * 60;
@@ -234,10 +279,14 @@ function HistoryWindow() {
     () => groupSegmentsByProject(projects, segments).filter((row) => row.segments.length > 0),
     [projects, segments],
   );
+  const ganttTasks = useMemo(
+    () => buildGanttTasks(rows, dayStart, dayEnd, now),
+    [dayEnd, dayStart, now, rows],
+  );
   const totalSeconds = useMemo(() => segments.reduce((total, segment) => {
-    const clipped = clipSegmentToDay(segment, dayStart, dayEnd);
+    const clipped = clipSegmentToDay(segment, dayStart, dayEnd, now);
     return total + (clipped ? clipped.endedAt - clipped.startedAt : 0);
-  }, 0), [dayEnd, dayStart, segments]);
+  }, 0), [dayEnd, dayStart, now, segments]);
 
   return (
     <main className="history-shell">
@@ -259,32 +308,35 @@ function HistoryWindow() {
         <div><span>项目数</span><strong>{rows.length}</strong></div>
         <div><span>空闲时间</span><strong>{formatDuration(Math.max(0, 24 * 60 * 60 - totalSeconds))}</strong></div>
       </section>
-      <section className="gantt-card">
-        <div className="gantt-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-        {rows.length === 0 && <div className="empty-gantt">这一天还没有记录</div>}
-        {rows.map((row) => (
-          <div className="gantt-row" key={row.project.id}>
-            <div className="gantt-label"><span className="project-dot" style={{ backgroundColor: row.project.color }} /><strong>{row.project.name}</strong></div>
-            <div className="gantt-lane">
-              {[25, 50, 75].map((position) => <i key={position} className="gantt-line" style={{ left: `${position}%` }} />)}
-              {row.segments.map((segment) => {
-                const clipped = clipSegmentToDay(segment, dayStart, dayEnd);
-                if (!clipped) return null;
-                const left = ((clipped.startedAt - dayStart) / (dayEnd - dayStart)) * 100;
-                const width = Math.max(1, ((clipped.endedAt - clipped.startedAt) / (dayEnd - dayStart)) * 100);
-                return <div className="gantt-block" key={segment.id} style={{ left: `${left}%`, width: `${width}%`, backgroundColor: row.project.color }} title={`${formatClock(clipped.startedAt)} - ${formatClock(clipped.endedAt)}`} />;
-              })}
-            </div>
-          </div>
-        ))}
+      <section className="gantt-card gantt-component">
+        {rows.length === 0 ? (
+          <div className="empty-gantt">这一天还没有记录</div>
+        ) : (
+          <Gantt
+            tasks={ganttTasks}
+            links={[]}
+            columns={[{ id: "text", header: "项目", width: 180 }]}
+            start={new Date(dayStart * 1000)}
+            end={new Date(dayEnd * 1000)}
+            lengthUnit="hour"
+            durationUnit="hour"
+            scaleHeight={38}
+            cellHeight={48}
+            cellWidth={58}
+            zoom={{ minCellWidth: 28, maxCellWidth: 180 }}
+            readonly
+            cellBorders="column"
+          />
+        )}
       </section>
       {rows.length > 0 && <section className="entry-list">
         {rows.flatMap((row) => row.segments.map((segment) => {
-          const clipped = clipSegmentToDay(segment, dayStart, dayEnd);
+          const clipped = clipSegmentToDay(segment, dayStart, dayEnd, now);
           if (!clipped) return null;
-          return <div className="entry-row" key={segment.id}>
+          const running = segmentEndLabel(segment) === "计时中";
+          return <div className={`entry-row ${running ? "running-entry" : ""}`} key={segment.id}>
             <span className="entry-color" style={{ backgroundColor: row.project.color }} />
-            <div><strong>{row.project.name}</strong><span>{formatClock(clipped.startedAt)} – {formatClock(clipped.endedAt)}</span></div>
+            <div><strong>{row.project.name}</strong><span>{formatClock(clipped.startedAt)} – {running ? "计时中" : formatClock(clipped.endedAt)}</span></div>
             <time>{formatDuration(clipped.endedAt - clipped.startedAt)}</time>
           </div>;
         }))}

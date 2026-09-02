@@ -34,9 +34,10 @@ export function clipSegmentToDay(
   segment: Pick<TimeSegment, "startedAt" | "endedAt">,
   dayStart: number,
   dayEnd: number,
+  now = dayEnd,
 ): { startedAt: number; endedAt: number } | null {
   const startedAt = Math.max(segment.startedAt, dayStart);
-  const endedAt = Math.min(segment.endedAt ?? dayEnd, dayEnd);
+  const endedAt = Math.min(segment.endedAt ?? now, dayEnd);
   if (startedAt >= endedAt) return null;
   return { startedAt, endedAt };
 }

@@ -22,10 +22,10 @@ describe("project timeline model", () => {
     expect(rows[1].segments.map((segment) => segment.id)).toEqual([3]);
   });
 
-  it("clips a segment to the selected day", () => {
-    expect(clipSegmentToDay({ startedAt: 90, endedAt: 130 }, 100, 120)).toEqual({
+  it("clips an active segment to now instead of midnight", () => {
+    expect(clipSegmentToDay({ startedAt: 90, endedAt: null }, 100, 200, 130)).toEqual({
       startedAt: 100,
-      endedAt: 120,
+      endedAt: 130,
     });
   });
 });

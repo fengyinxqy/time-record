@@ -22,3 +22,5 @@ data/*.db-shm
 *.iml
 .DS_Store
 Thumbs.db
+.vscode/*
+!.vscode/extensions.json

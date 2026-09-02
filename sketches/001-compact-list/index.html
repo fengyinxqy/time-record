@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>时间记录 · 紧凑列表</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;background:#11111a;color:#f6f4ff;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+  .app{width:390px;min-height:620px;margin:0 auto;padding:22px 18px;background:radial-gradient(circle at 0 0,#292452,#11111a 44%)}
+  header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}.overline{font:10px monospace;letter-spacing:.18em;color:#9791bf;margin-bottom:5px}h1{font-size:22px;letter-spacing:-.05em;margin:0}.date{color:#817b99;font:11px monospace;margin-top:5px}
+  .header-link{border:0;background:transparent;color:#a9a4c9;font-size:12px;padding:4px 0;cursor:pointer}.header-link:hover{color:#fff}
+  .list{display:flex;flex-direction:column;gap:9px}.row{display:grid;grid-template-columns:8px 1fr auto;align-items:center;gap:11px;padding:14px 12px;border:1px solid #2d2a42;border-radius:13px;background:#1a1927;transition:.18s}.row:hover{border-color:#6259b4;transform:translateX(2px)}.row.active{background:#28224d;border-color:#7166d8;box-shadow:0 8px 20px #09081266}.dot{width:8px;height:8px;border-radius:50%;background:#4e4a62}.active .dot{background:#62d9ad;box-shadow:0 0 0 4px #62d9ad1f}.text{min-width:0}.title{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta{color:#817b99;font-size:10px;margin-top:4px}.duration{font:12px monospace;color:#c7c2e4;margin-right:5px}.play{width:31px;height:31px;border:1px solid #504b71;border-radius:9px;background:#211e34;color:#d8d3f5;font-size:12px;cursor:pointer}.active .play{background:#d26378;border-color:#d26378;color:white}.play:hover{filter:brightness(1.15)}
+  .add{display:flex;gap:8px;margin-top:16px}.add input{min-width:0;flex:1;border:1px solid #363249;border-radius:10px;background:#15141f;color:#f4f1ff;outline:0;padding:11px 12px;font-size:12px}.add input:focus{border-color:#8277ed}.add button{border:0;border-radius:10px;background:#8479f3;color:white;padding:0 15px;font-weight:700;cursor:pointer}.add button:hover{background:#978dfb}
+  .hint{margin:18px 2px 0;color:#6f6a82;font-size:10px;line-height:1.6}.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);padding:9px 13px;border:1px solid #4a456a;border-radius:8px;background:#262241;color:#d9d4fa;font-size:11px;opacity:0;pointer-events:none;transition:.2s}.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<main class="app">
+  <header><div><div class="overline">TIME RECORD</div><h1>今天要做什么？</h1><div class="date">2026-09-02 · 星期三</div></div><button class="header-link" onclick="showToast('这里打开甘特图')">今日概览 ↗</button></header>
+  <section class="list" id="list">
+    <div class="row active" data-title="写代码" data-seconds="1842"><i class="dot"></i><div class="text"><div class="title">写代码</div><div class="meta">个人 · 开发</div></div><span class="duration">30:42</span><button class="play" onclick="toggle(this)">Ⅱ</button></div>
+    <div class="row" data-title="阅读文档" data-seconds="0"><i class="dot"></i><div class="text"><div class="title">阅读文档</div><div class="meta">项目 A · 学习</div></div><span class="duration">00:00</span><button class="play" onclick="toggle(this)">▶</button></div>
+    <div class="row" data-title="整理邮件" data-seconds="614"><i class="dot"></i><div class="text"><div class="title">整理邮件</div><div class="meta">工作 · 行政</div></div><span class="duration">10:14</span><button class="play" onclick="toggle(this)">▶</button></div>
+  </section>
+  <form class="add" onsubmit="addTask(event)"><input id="newTitle" placeholder="输入新的工作内容…" /><button>新增</button></form>
+  <p class="hint">同一时间只有一个计时器。点击另一行会自动切换，当前行暂停并留下一个时间段。</p>
+</main><div class="toast" id="toast"></div>
+<script>
+function toggle(button){const row=button.closest('.row');document.querySelectorAll('.row.active').forEach(r=>{if(r!==row){r.classList.remove('active');r.querySelector('.play').textContent='▶';}});const active=row.classList.toggle('active');button.textContent=active?'Ⅱ':'▶';showToast(active?'开始记录：'+row.dataset.title:'已暂停：'+row.dataset.title)}
+function addTask(event){event.preventDefault();const input=document.getElementById('newTitle');const title=input.value.trim();if(!title)return;const row=document.createElement('div');row.className='row';row.dataset.title=title;row.innerHTML='<i class="dot"></i><div class="text"><div class="title"></div><div class="meta">未分类</div></div><span class="duration">00:00</span><button class="play" onclick="toggle(this)">▶</button>';row.querySelector('.title').textContent=title;document.getElementById('list').append(row);input.value='';showToast('已新增：'+title)}
+function showToast(text){const toast=document.getElementById('toast');toast.textContent=text;toast.classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>toast.classList.remove('show'),1400)}
+</script>
+</body></html>

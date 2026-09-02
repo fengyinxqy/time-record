@@ -234,6 +234,24 @@ impl Database {
         self.entry_by_id(active.id)
     }
 
+    pub fn entries_between(&self, start: i64, end: i64) -> Result<Vec<TimeEntry>, String> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, title, project, category, color, started_at, ended_at, created_at
+                 FROM time_entries
+                 WHERE started_at < ?2 AND (ended_at IS NULL OR ended_at > ?1)
+                 ORDER BY started_at, id",
+            )
+            .map_err(|error| error.to_string())?;
+        let entries = statement
+            .query_map(params![start, end], entry_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<TimeEntry>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(entries)
+    }
+
     fn entry_by_id(&self, id: i64) -> Result<Option<TimeEntry>, String> {
         self.connection
             .query_row(
@@ -315,6 +333,20 @@ mod tests {
         assert_eq!(recovered.id, started.id);
         assert_eq!(recovered.ended_at, Some(180));
         assert!(db.active_entry().unwrap().is_none());
+    }
+
+    #[test]
+    fn entries_between_returns_overlapping_entries_in_start_order() {
+        let db = Database::open_in_memory().unwrap();
+        let first = db.start_entry(new_entry("第一段"), 100).unwrap();
+        db.pause_active(150).unwrap();
+        let second = db.start_entry(new_entry("第二段"), 200).unwrap();
+        db.pause_active(260).unwrap();
+
+        let entries = db.entries_between(140, 210).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, first.id);
+        assert_eq!(entries[1].id, second.id);
     }
 
     #[test]

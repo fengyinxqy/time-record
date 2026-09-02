@@ -67,6 +67,18 @@ pub struct TimeEntry {
     pub created_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Preset {
+    pub id: i64,
+    pub title: String,
+    pub project: Option<String>,
+    pub category: Option<String>,
+    pub color: String,
+    pub sort_order: i64,
+    pub created_at: i64,
+}
+
 pub struct Database {
     connection: Connection,
 }
@@ -234,6 +246,50 @@ impl Database {
         self.entry_by_id(active.id)
     }
 
+    pub fn list_presets(&self) -> Result<Vec<Preset>, String> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, title, project, category, color, sort_order, created_at
+                 FROM presets ORDER BY sort_order, created_at DESC, id DESC",
+            )
+            .map_err(|error| error.to_string())?;
+        let presets = statement
+            .query_map([], preset_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<Preset>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(presets)
+    }
+
+    pub fn save_preset(&self, input: NewEntry, now: i64) -> Result<Preset, String> {
+        if input.title.trim().is_empty() {
+            return Err("title must not be empty".to_string());
+        }
+        self.connection
+            .execute(
+                "INSERT INTO presets (title, project, category, color, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.title.trim(),
+                    input.project,
+                    input.category,
+                    input.color,
+                    now
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let id = self.connection.last_insert_rowid();
+        self.connection
+            .query_row(
+                "SELECT id, title, project, category, color, sort_order, created_at
+                 FROM presets WHERE id = ?1",
+                params![id],
+                preset_from_row,
+            )
+            .map_err(|error| error.to_string())
+    }
+
     pub fn entries_between(&self, start: i64, end: i64) -> Result<Vec<TimeEntry>, String> {
         let mut statement = self
             .connection
@@ -263,6 +319,18 @@ impl Database {
             .optional()
             .map_err(|error| error.to_string())
     }
+}
+
+fn preset_from_row(row: &Row<'_>) -> rusqlite::Result<Preset> {
+    Ok(Preset {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        project: row.get(2)?,
+        category: row.get(3)?,
+        color: row.get(4)?,
+        sort_order: row.get(5)?,
+        created_at: row.get(6)?,
+    })
 }
 
 fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<TimeEntry> {
@@ -347,6 +415,16 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].id, first.id);
         assert_eq!(entries[1].id, second.id);
+    }
+
+    #[test]
+    fn saves_and_lists_presets() {
+        let db = Database::open_in_memory().unwrap();
+        let preset = db.save_preset(new_entry("每日计划"), 100).unwrap();
+
+        assert_eq!(preset.title, "每日计划");
+        assert_eq!(preset.project.as_deref(), Some("个人"));
+        assert_eq!(db.list_presets().unwrap(), vec![preset]);
     }
 
     #[test]

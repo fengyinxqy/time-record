@@ -1,7 +1,7 @@
 mod db;
 mod domain;
 
-use db::{Database, NewEntry, TimeEntry};
+use db::{Database, NewEntry, Preset, TimeEntry};
 use serde::Serialize;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -74,6 +74,21 @@ fn get_entries_for_date(
     let (start, end) = domain::utc_day_bounds(&date, timezone_offset_hours)
         .ok_or_else(|| "invalid date, expected YYYY-MM-DD".to_string())?;
     database(&state)?.entries_between(start, end)
+}
+
+#[tauri::command]
+fn list_presets(state: State<'_, AppState>) -> Result<Vec<Preset>, String> {
+    database(&state)?.list_presets()
+}
+
+#[tauri::command]
+fn save_preset(input: NewEntry, state: State<'_, AppState>) -> Result<Preset, String> {
+    database(&state)?.save_preset(input, now_seconds())
+}
+
+#[tauri::command]
+fn open_history_window(app: AppHandle) -> Result<(), String> {
+    open_history(&app)
 }
 
 #[tauri::command]
@@ -177,6 +192,9 @@ pub fn run() {
             pause_timer,
             heartbeat,
             get_entries_for_date,
+            list_presets,
+            save_preset,
+            open_history_window,
             set_always_on_top
         ])
         .build(tauri::generate_context!())

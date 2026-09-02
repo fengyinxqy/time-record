@@ -7,9 +7,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{
-    AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, Window, WindowEvent,
-};
+use tauri::{AppHandle, Manager, RunEvent, State, Window, WindowEvent};
 
 struct AppState {
     database: Mutex<Database>,
@@ -103,23 +101,12 @@ fn get_segments_for_date(
 
 #[tauri::command]
 fn open_history_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("history") {
-        window.show().map_err(|error| error.to_string())?;
-        window.set_focus().map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-
-    WebviewWindowBuilder::new(
-        &app,
-        "history",
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("历史记录")
-    .inner_size(960.0, 680.0)
-    .min_inner_size(720.0, 480.0)
-    .build()
-    .map(|_| ())
-    .map_err(|error| error.to_string())
+    let window = app
+        .get_webview_window("history")
+        .ok_or_else(|| "history window is not configured".to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -190,7 +177,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "timer" {
+            if matches!(window.label(), "timer" | "history") {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();

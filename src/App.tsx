@@ -320,6 +320,12 @@ function HistoryWindow() {
             end={new Date(dayEnd * 1000)}
             lengthUnit="hour"
             durationUnit="hour"
+            scales={[{
+              unit: "hour",
+              step: 2,
+              format: (date: Date) => `${String(date.getHours()).padStart(2, "0")}:00`,
+            }]}
+            autoScale={false}
             scaleHeight={38}
             cellHeight={48}
             cellWidth={58}

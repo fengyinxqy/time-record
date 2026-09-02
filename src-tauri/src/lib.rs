@@ -1,7 +1,7 @@
 mod db;
 mod domain;
 
-use db::{Database, NewEntry, Preset, TimeEntry};
+use db::{Database, NewProject, Project, TimeSegment};
 use serde::Serialize;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,7 +18,8 @@ struct AppState {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TimerState {
-    active: Option<TimeEntry>,
+    active_project: Option<Project>,
+    active_segment: Option<TimeSegment>,
     elapsed_seconds: i64,
 }
 
@@ -39,24 +40,48 @@ fn database<'a>(state: &'a State<'_, AppState>) -> Result<std::sync::MutexGuard<
 #[tauri::command]
 fn get_timer_state(state: State<'_, AppState>) -> Result<TimerState, String> {
     let db = database(&state)?;
-    let active = db.active_entry()?;
-    let elapsed_seconds = active
+    let active_segment = db.active_segment()?;
+    let active_project = active_segment
         .as_ref()
-        .map(|entry| (now_seconds() - entry.started_at).max(0))
+        .map(|segment| db.project_by_id(segment.project_id))
+        .transpose()?
+        .flatten();
+    let elapsed_seconds = active_segment
+        .as_ref()
+        .map(|segment| (now_seconds() - segment.started_at).max(0))
         .unwrap_or(0);
     Ok(TimerState {
-        active,
+        active_project,
+        active_segment,
         elapsed_seconds,
     })
 }
 
 #[tauri::command]
-fn start_timer(input: NewEntry, state: State<'_, AppState>) -> Result<TimeEntry, String> {
-    database(&state)?.start_entry(input, now_seconds())
+fn list_projects(
+    include_archived: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<Project>, String> {
+    database(&state)?.list_projects(include_archived)
 }
 
 #[tauri::command]
-fn pause_timer(state: State<'_, AppState>) -> Result<Option<TimeEntry>, String> {
+fn create_project(input: NewProject, state: State<'_, AppState>) -> Result<Project, String> {
+    database(&state)?.create_project(input, now_seconds())
+}
+
+#[tauri::command]
+fn archive_project(project_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    database(&state)?.archive_project(project_id)
+}
+
+#[tauri::command]
+fn start_project(project_id: i64, state: State<'_, AppState>) -> Result<TimeSegment, String> {
+    database(&state)?.start_project(project_id, now_seconds())
+}
+
+#[tauri::command]
+fn pause_timer(state: State<'_, AppState>) -> Result<Option<TimeSegment>, String> {
     database(&state)?.pause_active(now_seconds())
 }
 
@@ -66,29 +91,35 @@ fn heartbeat(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_entries_for_date(
+fn get_segments_for_date(
     date: String,
     timezone_offset_hours: i32,
     state: State<'_, AppState>,
-) -> Result<Vec<TimeEntry>, String> {
+) -> Result<Vec<TimeSegment>, String> {
     let (start, end) = domain::utc_day_bounds(&date, timezone_offset_hours)
         .ok_or_else(|| "invalid date, expected YYYY-MM-DD".to_string())?;
-    database(&state)?.entries_between(start, end)
-}
-
-#[tauri::command]
-fn list_presets(state: State<'_, AppState>) -> Result<Vec<Preset>, String> {
-    database(&state)?.list_presets()
-}
-
-#[tauri::command]
-fn save_preset(input: NewEntry, state: State<'_, AppState>) -> Result<Preset, String> {
-    database(&state)?.save_preset(input, now_seconds())
+    database(&state)?.segments_between(start, end)
 }
 
 #[tauri::command]
 fn open_history_window(app: AppHandle) -> Result<(), String> {
-    open_history(&app)
+    if let Some(window) = app.get_webview_window("history") {
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(
+        &app,
+        "history",
+        WebviewUrl::App("index.html?view=history".into()),
+    )
+    .title("历史记录")
+    .inner_size(960.0, 680.0)
+    .min_inner_size(720.0, 480.0)
+    .build()
+    .map(|_| ())
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -103,26 +134,6 @@ fn show_timer(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
-}
-
-fn open_history(app: &AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("history") {
-        window.show().map_err(|error| error.to_string())?;
-        window.set_focus().map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-
-    WebviewWindowBuilder::new(
-        app,
-        "history",
-        WebviewUrl::App("index.html?view=history".into()),
-    )
-    .title("历史记录")
-    .inner_size(960.0, 680.0)
-    .min_inner_size(720.0, 480.0)
-    .build()
-    .map(|_| ())
-    .map_err(|error| error.to_string())
 }
 
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
@@ -142,7 +153,7 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show_timer" => show_timer(app),
             "open_history" => {
-                let _ = open_history(app);
+                let _ = open_history_window(app.clone());
             }
             "quit" => app.exit(0),
             _ => {}
@@ -188,12 +199,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_timer_state,
-            start_timer,
+            list_projects,
+            create_project,
+            archive_project,
+            start_project,
             pause_timer,
             heartbeat,
-            get_entries_for_date,
-            list_presets,
-            save_preset,
+            get_segments_for_date,
             open_history_window,
             set_always_on_top
         ])

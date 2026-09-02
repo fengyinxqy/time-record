@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Tauri / Rust build output
+target/
+
+# Frontend build output
+dist/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Runtime database and SQLite sidecar files
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# IDE and OS files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

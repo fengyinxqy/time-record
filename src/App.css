@@ -95,3 +95,17 @@ h1 { margin: 0; color: #fcfbff; font-size: 22px; letter-spacing: -.04em; }
   .stats-row > div { padding: 10px; }
   .stats-row strong { font-size: 15px; }
 }
+
+.settings-shell { min-height: 100vh; padding: 28px; background: #11101a; color: #f3f0ff; }
+.settings-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.settings-list { margin-top: 28px; border: 1px solid #2b293d; border-radius: 14px; overflow: hidden; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px; background: rgba(26, 25, 39, .7); }
+.settings-row + .settings-row { border-top: 1px solid #2b293d; }
+.settings-copy strong, .settings-copy span { display: block; }
+.settings-copy strong { color: #f3f0ff; font-size: 13px; }
+.settings-copy span { margin-top: 5px; color: #817c96; font-size: 11px; }
+.toggle { display: flex; flex: 0 0 auto; align-items: center; width: 42px; height: 24px; padding: 3px; border: 0; border-radius: 999px; background: #4a465d; cursor: pointer; transition: background .15s ease; }
+.toggle span { width: 18px; height: 18px; margin: 0; border-radius: 50%; background: #f8f7ff; transition: transform .15s ease; }
+.toggle.enabled { background: #7c6cf2; }
+.toggle.enabled span { transform: translateX(18px); }
+.toggle:disabled { cursor: not-allowed; opacity: .45; }

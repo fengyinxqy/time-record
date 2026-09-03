@@ -19,7 +19,7 @@
         "minWidth": 320,
         "minHeight": 180,
         "resizable": true,
-        "visible": true
+        "visible": false
       },
       {
         "label": "history",
@@ -29,6 +29,16 @@
         "minWidth": 720,
         "minHeight": 480,
         "resizable": true,
+        "visible": false
+      },
+      {
+        "label": "settings",
+        "title": "设置",
+        "width": 420,
+        "height": 300,
+        "minWidth": 360,
+        "minHeight": 260,
+        "resizable": false,
         "visible": false
       }
     ],

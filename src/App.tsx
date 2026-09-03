@@ -8,6 +8,11 @@ import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
 import { resolveViewMode, type ViewMode } from "./viewMode";
 import { segmentEndLabel } from "./historyModel";
 import { DailyTimeline } from "./DailyTimeline";
+import {
+  initialStartupSettings,
+  startupSettingsReducer,
+  type StartupSettings,
+} from "./settingsModel";
 
 type TimerSnapshot = {
   activeProject: Project | null;
@@ -155,6 +160,14 @@ function TimerWindow() {
     }
   };
 
+  const showSettings = async () => {
+    try {
+      await invoke("open_settings_window");
+    } catch (reason) {
+      setError(friendlyError(reason));
+    }
+  };
+
   const displayNow = nowSeconds();
   return (
     <main className="timer-shell">
@@ -168,6 +181,7 @@ function TimerWindow() {
             {pinned ? "置顶中" : "置顶"}
           </button>
           <button className="icon-button" onClick={showHistory}>历史</button>
+          <button className="icon-button" onClick={showSettings}>设置</button>
         </div>
       </header>
 
@@ -306,6 +320,115 @@ function HistoryWindow() {
   );
 }
 
+function SettingsWindow() {
+  const [settings, dispatch] = useReducer(startupSettingsReducer, initialStartupSettings);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const loadSettings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const snapshot = await invoke<StartupSettings>("get_startup_settings");
+      dispatch({ type: "loaded", settings: snapshot });
+    } catch (reason) {
+      dispatch({ type: "failed", message: friendlyError(reason) });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSettings();
+    let active = true;
+    const unlistenPromise = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (active && focused) void loadSettings();
+    });
+    return () => {
+      active = false;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [loadSettings]);
+
+  const updateAutostart = async () => {
+    setSaving(true);
+    try {
+      const snapshot = await invoke<StartupSettings>("set_autostart_enabled", {
+        enabled: !settings.autostartEnabled,
+      });
+      dispatch({ type: "loaded", settings: snapshot });
+    } catch (reason) {
+      dispatch({ type: "failed", message: friendlyError(reason) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateSilentStart = async () => {
+    setSaving(true);
+    try {
+      const snapshot = await invoke<StartupSettings>("set_silent_start", {
+        enabled: !settings.silentStart,
+      });
+      dispatch({ type: "loaded", settings: snapshot });
+    } catch (reason) {
+      dispatch({ type: "failed", message: friendlyError(reason) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const closeSettings = async () => {
+    try {
+      await invoke("hide_settings_window");
+    } catch (reason) {
+      dispatch({ type: "failed", message: friendlyError(reason) });
+    }
+  };
+
+  return (
+    <main className="settings-shell">
+      <header className="settings-header">
+        <div>
+          <p className="eyebrow">PREFERENCES</p>
+          <h1>设置</h1>
+        </div>
+        <button className="icon-button" onClick={() => void closeSettings()}>关闭</button>
+      </header>
+      <section className="settings-list" aria-busy={loading}>
+        <div className="settings-row">
+          <div className="settings-copy">
+            <strong>开机自启动</strong>
+            <span>登录 Windows 后自动运行时间记录</span>
+          </div>
+          <button
+            aria-checked={settings.autostartEnabled}
+            aria-label="开机自启动"
+            className={`toggle ${settings.autostartEnabled ? "enabled" : ""}`}
+            disabled={loading || saving}
+            onClick={() => void updateAutostart()}
+            role="switch"
+          ><span /></button>
+        </div>
+        <div className="settings-row">
+          <div className="settings-copy">
+            <strong>静默启动</strong>
+            <span>开机自启动时仅驻留系统托盘</span>
+          </div>
+          <button
+            aria-checked={settings.silentStart}
+            aria-label="静默启动"
+            className={`toggle ${settings.silentStart ? "enabled" : ""}`}
+            disabled={loading || saving || !settings.autostartEnabled}
+            onClick={() => void updateSilentStart()}
+            role="switch"
+          ><span /></button>
+        </div>
+      </section>
+      {settings.error && <p className="error-message">{settings.error}</p>}
+    </main>
+  );
+}
+
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode | null>(null);
 
@@ -316,5 +439,6 @@ export default function App() {
   if (viewMode === null) {
     return <main className="loading-shell">正在打开…</main>;
   }
+  if (viewMode === "settings") return <SettingsWindow />;
   return viewMode === "history" ? <HistoryWindow /> : <TimerWindow />;
 }

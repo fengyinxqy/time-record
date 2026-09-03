@@ -384,6 +384,17 @@ function SettingsWindow() {
 
   useEffect(() => {
     void loadSettings();
+    let active = true;
+    void getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (active && focused) void loadSettings();
+      })
+      .then((unlisten) => {
+        if (!active) unlisten();
+      });
+    return () => {
+      active = false;
+    };
   }, [loadSettings]);
 
   const updateAutostart = async () => {
@@ -433,7 +444,7 @@ function SettingsWindow() {
       </header>
       <section className="settings-list" aria-busy={loading}>
         <div className="settings-row">
-          <div>
+          <div className="settings-copy">
             <strong>开机自启动</strong>
             <span>登录 Windows 后自动运行时间记录</span>
           </div>
@@ -447,7 +458,7 @@ function SettingsWindow() {
           ><span /></button>
         </div>
         <div className="settings-row">
-          <div>
+          <div className="settings-copy">
             <strong>静默启动</strong>
             <span>开机自启动时仅驻留系统托盘</span>
           </div>

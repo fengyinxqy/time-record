@@ -17,6 +17,9 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 
+# Local Git worktrees
+.worktrees/
+
 # IDE and OS files
 .idea/
 *.iml

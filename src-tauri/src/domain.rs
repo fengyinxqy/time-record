@@ -42,8 +42,8 @@ pub fn utc_day_bounds(date: &str, timezone_offset_hours: i32) -> Option<(i64, i6
     let day_of_year = (153 * adjusted_month + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     let days_since_epoch = era * 146097 + day_of_era - 719468;
-    let utc_midnight = days_since_epoch * SECONDS_PER_DAY
-        - i64::from(timezone_offset_hours) * SECONDS_PER_HOUR;
+    let utc_midnight =
+        days_since_epoch * SECONDS_PER_DAY - i64::from(timezone_offset_hours) * SECONDS_PER_HOUR;
 
     Some((utc_midnight, utc_midnight + SECONDS_PER_DAY))
 }

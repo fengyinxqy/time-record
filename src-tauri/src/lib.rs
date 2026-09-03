@@ -189,9 +189,13 @@ fn set_silent_start(
     let previous = database.silent_start()?;
     let executable = current_executable(&app)?;
     let autostart_enabled = autostart::is_enabled(&executable)?;
+    let rewrite = if autostart_enabled {
+        Some(startup_executable(executable)?)
+    } else {
+        None
+    };
     database.set_silent_start(enabled)?;
-    if autostart_enabled {
-        let executable = startup_executable(executable)?;
+    if let Some(executable) = rewrite {
         if let Err(error) = autostart::set_enabled(&executable, enabled) {
             let _ = database.set_silent_start(previous);
             return Err(error);
@@ -325,7 +329,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::valid_startup_executable;
+    use super::{valid_startup_executable, StartupSettings};
     use std::path::PathBuf;
 
     #[test]
@@ -338,6 +342,11 @@ mod tests {
     }
 
     #[test]
+    fn rejects_an_empty_executable_path() {
+        assert!(valid_startup_executable(PathBuf::new(), false).is_err());
+    }
+
+    #[test]
     fn accepts_a_packaged_executable_outside_debug() {
         assert_eq!(
             valid_startup_executable(
@@ -346,6 +355,21 @@ mod tests {
             )
             .unwrap(),
             PathBuf::from(r"C:\Program Files\时间记录\time-record.exe"),
+        );
+    }
+
+    #[test]
+    fn serializes_startup_settings_with_camel_case_keys() {
+        let settings = StartupSettings {
+            autostart_enabled: true,
+            silent_start: false,
+        };
+        assert_eq!(
+            serde_json::to_value(settings).unwrap(),
+            serde_json::json!({
+                "autostartEnabled": true,
+                "silentStart": false,
+            })
         );
     }
 }

@@ -21,8 +21,10 @@ export function startupSettingsReducer(
   state: StartupSettingsState,
   action: StartupSettingsAction,
 ): StartupSettingsState {
-  if (action.type === "loaded") {
-    return { ...action.settings, error: null };
+  switch (action.type) {
+    case "loaded":
+      return { ...action.settings, error: null };
+    case "failed":
+      return { ...state, error: action.message };
   }
-  return { ...state, error: action.message };
 }

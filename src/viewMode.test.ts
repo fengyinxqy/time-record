@@ -17,5 +17,6 @@ describe("view mode resolution", () => {
 
   it("uses the settings window label for the settings page", () => {
     expect(resolveViewMode("settings", "")).toBe("settings");
+    expect(resolveViewMode("settings", "?view=history")).toBe("settings");
   });
 });

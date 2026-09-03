@@ -14,4 +14,15 @@ describe("startupSettingsReducer", () => {
     expect(startupSettingsReducer(loaded, { type: "failed", message: "注册表访问失败" }))
       .toEqual({ ...loaded, error: "注册表访问失败" });
   });
+
+  it("clears a prior error once new settings load", () => {
+    const afterFailure = startupSettingsReducer(initialStartupSettings, {
+      type: "failed",
+      message: "注册表访问失败",
+    });
+    expect(startupSettingsReducer(afterFailure, {
+      type: "loaded",
+      settings: { autostartEnabled: true, silentStart: false },
+    })).toEqual({ autostartEnabled: true, silentStart: false, error: null });
+  });
 });

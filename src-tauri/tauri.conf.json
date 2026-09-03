@@ -14,8 +14,8 @@
       {
         "label": "timer",
         "title": "时间记录",
-        "width": 360,
-        "height": 220,
+        "width": 330,
+        "height": 500,
         "minWidth": 320,
         "minHeight": 180,
         "resizable": true,

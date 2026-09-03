@@ -110,6 +110,14 @@ fn open_history_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn hide_history_window(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("history")
+        .ok_or_else(|| "history window is not configured".to_string())?;
+    window.hide().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn set_always_on_top(window: Window, enabled: bool) -> Result<(), String> {
     window
         .set_always_on_top(enabled)
@@ -134,9 +142,13 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .item(&quit_item)
         .build()?;
 
-    TrayIconBuilder::new()
+    let mut tray_builder = TrayIconBuilder::new()
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false);
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray_builder = tray_builder.icon(icon);
+    }
+    tray_builder
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show_timer" => show_timer(app),
             "open_history" => {
@@ -194,6 +206,7 @@ pub fn run() {
             heartbeat,
             get_segments_for_date,
             open_history_window,
+            hide_history_window,
             set_always_on_top
         ])
         .build(tauri::generate_context!())

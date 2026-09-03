@@ -112,6 +112,30 @@ impl Database {
         Ok(names)
     }
 
+    pub fn silent_start(&self) -> Result<bool, String> {
+        let value = self
+            .connection
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'silent_start'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        Ok(value.as_deref() == Some("true"))
+    }
+
+    pub fn set_silent_start(&self, enabled: bool) -> Result<(), String> {
+        self.connection
+            .execute(
+                "INSERT INTO settings(key, value) VALUES ('silent_start', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![enabled.to_string()],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     pub fn create_project(&self, input: NewProject, now: i64) -> Result<Project, String> {
         let name = input.name.trim();
         if name.is_empty() {
@@ -130,7 +154,8 @@ impl Database {
                 }
             })?;
         let id = self.connection.last_insert_rowid();
-        self.project_by_id(id)?.ok_or_else(|| "created project missing".to_string())
+        self.project_by_id(id)?
+            .ok_or_else(|| "created project missing".to_string())
     }
 
     pub fn list_projects(&self, include_archived: bool) -> Result<Vec<Project>, String> {
@@ -247,7 +272,8 @@ impl Database {
             )
             .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
-        self.segment_by_id(segment_id)?.ok_or_else(|| "created segment missing".to_string())
+        self.segment_by_id(segment_id)?
+            .ok_or_else(|| "created segment missing".to_string())
     }
 
     pub fn pause_active(&self, now: i64) -> Result<Option<TimeSegment>, String> {
@@ -446,7 +472,13 @@ mod tests {
         let first_segment = db.start_project(first.id, 200).unwrap();
         let second_segment = db.start_project(second.id, 260).unwrap();
 
-        assert_eq!(db.segment_by_id(first_segment.id).unwrap().unwrap().ended_at, Some(260));
+        assert_eq!(
+            db.segment_by_id(first_segment.id)
+                .unwrap()
+                .unwrap()
+                .ended_at,
+            Some(260)
+        );
         assert_eq!(second_segment.project_id, second.id);
         assert_eq!(db.active_segment().unwrap().unwrap().id, second_segment.id);
     }
@@ -472,7 +504,14 @@ mod tests {
         db.archive_project(created.id).unwrap();
 
         assert!(db.list_projects(false).unwrap().is_empty());
-        assert_eq!(db.list_projects(true).unwrap(), vec![{ let mut p = created.clone(); p.archived = true; p }]);
+        assert_eq!(
+            db.list_projects(true).unwrap(),
+            vec![{
+                let mut p = created.clone();
+                p.archived = true;
+                p
+            }]
+        );
         assert_eq!(db.segments_between(100, 300).unwrap().len(), 1);
     }
 
@@ -487,5 +526,16 @@ mod tests {
         assert_eq!(recovered.id, segment.id);
         assert_eq!(recovered.ended_at, Some(180));
         assert!(db.active_segment().unwrap().is_none());
+    }
+
+    #[test]
+    fn persists_the_silent_start_preference() {
+        let db = Database::open_in_memory().unwrap();
+
+        assert!(!db.silent_start().unwrap());
+        db.set_silent_start(true).unwrap();
+        assert!(db.silent_start().unwrap());
+        db.set_silent_start(false).unwrap();
+        assert!(!db.silent_start().unwrap());
     }
 }

@@ -372,6 +372,7 @@ function SettingsWindow() {
   const [saving, setSaving] = useState(false);
 
   const loadSettings = useCallback(async () => {
+    setLoading(true);
     try {
       const snapshot = await invoke<StartupSettings>("get_startup_settings");
       dispatch({ type: "loaded", settings: snapshot });
@@ -385,15 +386,12 @@ function SettingsWindow() {
   useEffect(() => {
     void loadSettings();
     let active = true;
-    void getCurrentWindow()
-      .onFocusChanged(({ payload: focused }) => {
-        if (active && focused) void loadSettings();
-      })
-      .then((unlisten) => {
-        if (!active) unlisten();
-      });
+    const unlistenPromise = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (active && focused) void loadSettings();
+    });
     return () => {
       active = false;
+      void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [loadSettings]);
 

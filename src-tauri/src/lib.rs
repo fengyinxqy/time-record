@@ -99,7 +99,7 @@ fn create_project(input: NewProject, state: State<'_, AppState>) -> Result<Proje
 
 #[tauri::command]
 fn archive_project(project_id: i64, state: State<'_, AppState>) -> Result<(), String> {
-    database(&state)?.archive_project(project_id)
+    database(&state)?.archive_project(project_id, now_seconds())
 }
 
 #[tauri::command]
@@ -126,6 +126,38 @@ fn get_segments_for_date(
     let (start, end) = domain::utc_day_bounds(&date, timezone_offset_hours)
         .ok_or_else(|| "invalid date, expected YYYY-MM-DD".to_string())?;
     database(&state)?.segments_between(start, end)
+}
+
+fn export_filename(start: &str, end: &str) -> String {
+    let safe_start = start.replace(':', "-");
+    let safe_end = end.replace(':', "-");
+    format!("time-record-{safe_start}_to_{safe_end}.json")
+}
+
+#[tauri::command]
+fn export_data_to_file(
+    start: String,
+    end: String,
+    timezone_offset_hours: i32,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (start_utc, end_exclusive_utc) =
+        domain::utc_datetime_range_bounds(&start, &end, timezone_offset_hours).ok_or_else(
+            || "invalid datetime range, expected YYYY-MM-DDTHH:MM start and end".to_string(),
+        )?;
+    let data = database(&state)?.export_range(start_utc, end_exclusive_utc)?;
+    let exports_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("exports");
+    std::fs::create_dir_all(&exports_dir).map_err(|error| error.to_string())?;
+    let filename = export_filename(&start, &end);
+    let path = exports_dir.join(filename);
+    let json = serde_json::to_string_pretty(&data).map_err(|error| error.to_string())?;
+    std::fs::write(&path, json).map_err(|error| error.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -318,6 +350,7 @@ pub fn run() {
             pause_timer,
             heartbeat,
             get_segments_for_date,
+            export_data_to_file,
             open_history_window,
             hide_history_window,
             set_always_on_top,
@@ -342,8 +375,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_startup_executable, StartupSettings};
+    use super::{export_filename, valid_startup_executable, StartupSettings};
     use std::path::PathBuf;
+
+    #[test]
+    fn creates_a_windows_safe_export_filename_from_datetime_values() {
+        assert_eq!(
+            export_filename("2026-09-02T09:30", "2026-09-02T10:15"),
+            "time-record-2026-09-02T09-30_to_2026-09-02T10-15.json"
+        );
+    }
 
     #[test]
     fn rejects_autostart_creation_in_a_debug_build() {

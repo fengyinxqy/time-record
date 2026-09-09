@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 
 const SCHEMA: &str = r#"
@@ -11,7 +12,8 @@ CREATE TABLE IF NOT EXISTS projects (
     color TEXT NOT NULL DEFAULT '#7c6cf2',
     sort_order INTEGER NOT NULL DEFAULT 0,
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS time_segments (
@@ -20,6 +22,7 @@ CREATE TABLE IF NOT EXISTS time_segments (
     started_at INTEGER NOT NULL,
     ended_at INTEGER,
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     CHECK (ended_at IS NULL OR ended_at >= started_at)
 );
 
@@ -59,6 +62,7 @@ pub struct Project {
     pub sort_order: i64,
     pub archived: bool,
     pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -69,6 +73,14 @@ pub struct TimeSegment {
     pub started_at: i64,
     pub ended_at: Option<i64>,
     pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportData {
+    pub projects: Vec<Project>,
+    pub time_segments: Vec<TimeSegment>,
 }
 
 pub struct Database {
@@ -84,6 +96,7 @@ impl Database {
         Self::from_connection(connection)
     }
 
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<Self, String> {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
     }
@@ -92,9 +105,11 @@ impl Database {
         connection
             .execute_batch(SCHEMA)
             .map_err(|error| error.to_string())?;
+        ensure_updated_at_columns(&connection)?;
         Ok(Self { connection })
     }
 
+    #[cfg(test)]
     pub fn table_names(&self) -> Result<Vec<String>, String> {
         let mut statement = self
             .connection
@@ -143,7 +158,7 @@ impl Database {
         }
         self.connection
             .execute(
-                "INSERT INTO projects (name, color, created_at) VALUES (?1, ?2, ?3)",
+                "INSERT INTO projects (name, color, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
                 params![name, input.color, now],
             )
             .map_err(|error| {
@@ -160,10 +175,10 @@ impl Database {
 
     pub fn list_projects(&self, include_archived: bool) -> Result<Vec<Project>, String> {
         let query = if include_archived {
-            "SELECT id, name, color, sort_order, archived, created_at
+            "SELECT id, name, color, sort_order, archived, created_at, updated_at
              FROM projects ORDER BY sort_order, created_at, id"
         } else {
-            "SELECT id, name, color, sort_order, archived, created_at
+            "SELECT id, name, color, sort_order, archived, created_at, updated_at
              FROM projects WHERE archived = 0 ORDER BY sort_order, created_at, id"
         };
         let mut statement = self
@@ -178,7 +193,7 @@ impl Database {
         Ok(projects)
     }
 
-    pub fn archive_project(&self, project_id: i64) -> Result<(), String> {
+    pub fn archive_project(&self, project_id: i64, now: i64) -> Result<(), String> {
         if self
             .connection
             .query_row(
@@ -196,8 +211,8 @@ impl Database {
         let changed = self
             .connection
             .execute(
-                "UPDATE projects SET archived = 1 WHERE id = ?1",
-                params![project_id],
+                "UPDATE projects SET archived = 1, updated_at = ?2 WHERE id = ?1",
+                params![project_id, now],
             )
             .map_err(|error| error.to_string())?;
         if changed == 0 {
@@ -249,7 +264,7 @@ impl Database {
                 .map_err(|error| error.to_string())?;
             transaction
                 .execute(
-                    "UPDATE time_segments SET ended_at = ?1 WHERE id = ?2",
+                    "UPDATE time_segments SET ended_at = ?1, updated_at = ?1 WHERE id = ?2",
                     params![now.max(active_started_at), active_id],
                 )
                 .map_err(|error| error.to_string())?;
@@ -257,8 +272,8 @@ impl Database {
 
         transaction
             .execute(
-                "INSERT INTO time_segments (project_id, started_at, ended_at, created_at)
-                 VALUES (?1, ?2, NULL, ?2)",
+                "INSERT INTO time_segments (project_id, started_at, ended_at, created_at, updated_at)
+                 VALUES (?1, ?2, NULL, ?2, ?2)",
                 params![project_id, now],
             )
             .map_err(|error| error.to_string())?;
@@ -287,7 +302,7 @@ impl Database {
             .map_err(|error| error.to_string())?;
         transaction
             .execute(
-                "UPDATE time_segments SET ended_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
+                "UPDATE time_segments SET ended_at = ?1, updated_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
                 params![ended_at, active.id],
             )
             .map_err(|error| error.to_string())?;
@@ -306,7 +321,7 @@ impl Database {
     pub fn active_segment(&self) -> Result<Option<TimeSegment>, String> {
         self.connection
             .query_row(
-                "SELECT id, project_id, started_at, ended_at, created_at
+                "SELECT id, project_id, started_at, ended_at, created_at, updated_at
                  FROM time_segments WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1",
                 [],
                 segment_from_row,
@@ -347,7 +362,7 @@ impl Database {
             .map_err(|error| error.to_string())?;
         transaction
             .execute(
-                "UPDATE time_segments SET ended_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
+                "UPDATE time_segments SET ended_at = ?1, updated_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
                 params![ended_at, active.id],
             )
             .map_err(|error| error.to_string())?;
@@ -367,7 +382,7 @@ impl Database {
         let mut statement = self
             .connection
             .prepare(
-                "SELECT id, project_id, started_at, ended_at, created_at
+                "SELECT id, project_id, started_at, ended_at, created_at, updated_at
                  FROM time_segments
                  WHERE started_at < ?2 AND (ended_at IS NULL OR ended_at > ?1)
                  ORDER BY started_at, id",
@@ -384,7 +399,7 @@ impl Database {
     pub fn segment_by_id(&self, id: i64) -> Result<Option<TimeSegment>, String> {
         self.connection
             .query_row(
-                "SELECT id, project_id, started_at, ended_at, created_at
+                "SELECT id, project_id, started_at, ended_at, created_at, updated_at
                  FROM time_segments WHERE id = ?1",
                 params![id],
                 segment_from_row,
@@ -396,7 +411,7 @@ impl Database {
     pub fn project_by_id(&self, id: i64) -> Result<Option<Project>, String> {
         self.connection
             .query_row(
-                "SELECT id, name, color, sort_order, archived, created_at
+                "SELECT id, name, color, sort_order, archived, created_at, updated_at
                  FROM projects WHERE id = ?1",
                 params![id],
                 project_from_row,
@@ -404,6 +419,95 @@ impl Database {
             .optional()
             .map_err(|error| error.to_string())
     }
+
+    pub fn export_range(
+        &self,
+        start_utc: i64,
+        end_exclusive_utc: i64,
+    ) -> Result<ExportData, String> {
+        let segments = self.segments_changed_between(start_utc, end_exclusive_utc)?;
+        let segment_project_ids = segments
+            .iter()
+            .map(|segment| segment.project_id)
+            .collect::<HashSet<_>>();
+        let mut all_projects = self.list_projects(true)?;
+        let projects = all_projects
+            .drain(..)
+            .filter(|project| {
+                (project.created_at >= start_utc && project.created_at < end_exclusive_utc)
+                    || (project.updated_at >= start_utc && project.updated_at < end_exclusive_utc)
+                    || segment_project_ids.contains(&project.id)
+            })
+            .collect();
+
+        Ok(ExportData {
+            projects,
+            time_segments: segments,
+        })
+    }
+
+    fn segments_changed_between(
+        &self,
+        start_utc: i64,
+        end_exclusive_utc: i64,
+    ) -> Result<Vec<TimeSegment>, String> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, project_id, started_at, ended_at, created_at, updated_at
+                 FROM time_segments
+                 WHERE (created_at >= ?1 AND created_at < ?2)
+                    OR (updated_at >= ?1 AND updated_at < ?2)
+                 ORDER BY created_at, id",
+            )
+            .map_err(|error| error.to_string())?;
+        let segments = statement
+            .query_map(params![start_utc, end_exclusive_utc], segment_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<TimeSegment>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(segments)
+    }
+}
+
+fn ensure_updated_at_columns(connection: &Connection) -> Result<(), String> {
+    for (table, backfill) in [
+        (
+            "projects",
+            "UPDATE projects SET updated_at = created_at WHERE updated_at = 0",
+        ),
+        (
+            "time_segments",
+            "UPDATE time_segments
+             SET updated_at = MAX(created_at, COALESCE(ended_at, created_at))
+             WHERE updated_at = 0",
+        ),
+    ] {
+        let mut statement = connection
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(|error| error.to_string())?;
+        let has_updated_at = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+            .iter()
+            .any(|column| column == "updated_at");
+        if !has_updated_at {
+            connection
+                .execute(
+                    &format!(
+                        "ALTER TABLE {table} ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0"
+                    ),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        connection
+            .execute(backfill, [])
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
@@ -414,6 +518,7 @@ fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
         sort_order: row.get(3)?,
         archived: row.get::<_, i64>(4)? != 0,
         created_at: row.get(5)?,
+        updated_at: row.get(6)?,
     })
 }
 
@@ -424,18 +529,27 @@ fn segment_from_row(row: &Row<'_>) -> rusqlite::Result<TimeSegment> {
         started_at: row.get(2)?,
         ended_at: row.get(3)?,
         created_at: row.get(4)?,
+        updated_at: row.get(5)?,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Database, NewProject};
+    use super::{Database, NewProject, Project};
+    use rusqlite::Connection;
 
     fn project(name: &str) -> NewProject {
         NewProject {
             name: name.to_string(),
             color: "#7c6cf2".to_string(),
         }
+    }
+
+    fn archived(project: &Project, updated_at: i64) -> Project {
+        let mut copy = project.clone();
+        copy.archived = true;
+        copy.updated_at = updated_at;
+        copy
     }
 
     #[test]
@@ -450,6 +564,39 @@ mod tests {
                 "time_segments".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn migrates_legacy_records_with_an_exportable_update_timestamp() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE projects (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    color TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    archived INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE TABLE time_segments (
+                    id INTEGER PRIMARY KEY,
+                    project_id INTEGER NOT NULL,
+                    started_at INTEGER NOT NULL,
+                    ended_at INTEGER,
+                    created_at INTEGER NOT NULL
+                );
+                INSERT INTO projects VALUES (1, '旧项目', '#7c6cf2', 0, 0, 1_000);
+                INSERT INTO time_segments VALUES (1, 1, 2_000, 3_000, 2_000);",
+            )
+            .unwrap();
+
+        let db = Database::from_connection(connection).unwrap();
+        let data = db.export_range(2_500, 3_500).unwrap();
+
+        assert_eq!(data.time_segments.len(), 1);
+        assert_eq!(data.time_segments[0].updated_at, 3_000);
+        assert_eq!(data.projects.len(), 1);
     }
 
     #[test]
@@ -501,16 +648,12 @@ mod tests {
         let created = db.create_project(project("旧项目"), 100).unwrap();
         db.start_project(created.id, 200).unwrap();
         db.pause_active(240).unwrap();
-        db.archive_project(created.id).unwrap();
+        db.archive_project(created.id, 300).unwrap();
 
         assert!(db.list_projects(false).unwrap().is_empty());
         assert_eq!(
             db.list_projects(true).unwrap(),
-            vec![{
-                let mut p = created.clone();
-                p.archived = true;
-                p
-            }]
+            vec![archived(&created, 300)]
         );
         assert_eq!(db.segments_between(100, 300).unwrap().len(), 1);
     }
@@ -537,5 +680,82 @@ mod tests {
         assert!(db.silent_start().unwrap());
         db.set_silent_start(false).unwrap();
         assert!(!db.silent_start().unwrap());
+    }
+
+    #[test]
+    fn export_range_includes_segments_and_their_projects() {
+        let db = Database::open_in_memory().unwrap();
+        let coding = db.create_project(project("写代码"), 9_000).unwrap();
+        let reading = db.create_project(project("阅读"), 9_500).unwrap();
+        db.start_project(coding.id, 10_000).unwrap();
+        db.pause_active(10_500).unwrap();
+        db.start_project(reading.id, 11_500).unwrap();
+        db.pause_active(11_900).unwrap();
+
+        let data = db.export_range(10_200, 11_200).unwrap();
+
+        assert_eq!(data.time_segments.len(), 1);
+        assert_eq!(data.time_segments[0].project_id, coding.id);
+        let included: Vec<&str> = data.projects.iter().map(|p| p.name.as_str()).collect();
+        assert!(included.contains(&"写代码"));
+        assert!(!included.contains(&"阅读"));
+    }
+
+    #[test]
+    fn export_range_includes_projects_created_within_the_range() {
+        let db = Database::open_in_memory().unwrap();
+        let created_in = db.create_project(project("新项目"), 10_000).unwrap();
+        db.create_project(project("旧项目"), 5_000).unwrap();
+
+        let data = db.export_range(9_000, 11_000).unwrap();
+
+        assert!(data.time_segments.is_empty());
+        assert_eq!(
+            data.projects,
+            vec![{
+                let mut project = created_in.clone();
+                project.created_at = 10_000;
+                project
+            }]
+        );
+    }
+
+    #[test]
+    fn export_range_is_exclusive_of_the_end() {
+        let db = Database::open_in_memory().unwrap();
+        let coding = db.create_project(project("写代码"), 9_000).unwrap();
+        db.start_project(coding.id, 10_000).unwrap();
+        db.pause_active(10_500).unwrap();
+
+        let contained = db.export_range(10_000, 11_000).unwrap();
+        let outside = db.export_range(10_600, 11_000).unwrap();
+
+        assert_eq!(contained.time_segments.len(), 1);
+        assert!(outside.time_segments.is_empty());
+    }
+
+    #[test]
+    fn export_range_includes_projects_updated_within_the_range() {
+        let db = Database::open_in_memory().unwrap();
+        let archived_project = db.create_project(project("归档项目"), 5_000).unwrap();
+        db.archive_project(archived_project.id, 10_200).unwrap();
+
+        let data = db.export_range(10_000, 11_000).unwrap();
+
+        assert_eq!(data.projects, vec![archived(&archived_project, 10_200)]);
+        assert!(data.time_segments.is_empty());
+    }
+
+    #[test]
+    fn export_range_excludes_segments_that_only_overlap_the_selected_range() {
+        let db = Database::open_in_memory().unwrap();
+        let spanning = db.create_project(project("跨越时段"), 8_000).unwrap();
+        db.start_project(spanning.id, 9_000).unwrap();
+        db.pause_active(12_000).unwrap();
+
+        let data = db.export_range(10_000, 11_000).unwrap();
+
+        assert!(data.projects.is_empty());
+        assert!(data.time_segments.is_empty());
     }
 }

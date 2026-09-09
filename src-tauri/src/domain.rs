@@ -2,6 +2,7 @@ const SECONDS_PER_MINUTE: i64 = 60;
 const SECONDS_PER_HOUR: i64 = 60 * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY: i64 = 24 * SECONDS_PER_HOUR;
 
+#[cfg(test)]
 pub fn format_duration(total_seconds: i64) -> String {
     let seconds = total_seconds.max(0);
     let hours = seconds / SECONDS_PER_HOUR;
@@ -48,9 +49,52 @@ pub fn utc_day_bounds(date: &str, timezone_offset_hours: i32) -> Option<(i64, i6
     Some((utc_midnight, utc_midnight + SECONDS_PER_DAY))
 }
 
+/// Returns the inclusive local-day range `[start, end]` as a half-open UTC
+/// interval `[start_utc, end_exclusive_utc)`, or `None` if either date is
+/// invalid or the start is after the end.
+#[cfg(test)]
+pub fn utc_range_bounds(start: &str, end: &str, timezone_offset_hours: i32) -> Option<(i64, i64)> {
+    let (start_utc, _) = utc_day_bounds(start, timezone_offset_hours)?;
+    let (end_utc, end_exclusive) = utc_day_bounds(end, timezone_offset_hours)?;
+    if start_utc > end_utc {
+        return None;
+    }
+    Some((start_utc, end_exclusive))
+}
+
+/// Converts an HTML `datetime-local` value into UTC seconds. The resulting
+/// range includes every second in the chosen end minute.
+pub fn utc_datetime_range_bounds(
+    start: &str,
+    end: &str,
+    timezone_offset_hours: i32,
+) -> Option<(i64, i64)> {
+    let start_utc = utc_datetime_to_utc(start, timezone_offset_hours)?;
+    let end_utc = utc_datetime_to_utc(end, timezone_offset_hours)?;
+    if start_utc > end_utc {
+        return None;
+    }
+    Some((start_utc, end_utc + SECONDS_PER_MINUTE))
+}
+
+fn utc_datetime_to_utc(value: &str, timezone_offset_hours: i32) -> Option<i64> {
+    let (date, time) = value.split_once('T')?;
+    let (hour, minute) = time.split_once(':')?;
+    if time.matches(':').count() != 1 {
+        return None;
+    }
+    let hour = hour.parse::<i64>().ok()?;
+    let minute = minute.parse::<i64>().ok()?;
+    if !(0..24).contains(&hour) || !(0..60).contains(&minute) {
+        return None;
+    }
+    let (utc_midnight, _) = utc_day_bounds(date, timezone_offset_hours)?;
+    Some(utc_midnight + hour * SECONDS_PER_HOUR + minute * SECONDS_PER_MINUTE)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{format_duration, utc_day_bounds};
+    use super::{format_duration, utc_datetime_range_bounds, utc_day_bounds, utc_range_bounds};
 
     #[test]
     fn formats_duration_as_hours_minutes_and_seconds() {
@@ -65,5 +109,32 @@ mod tests {
             utc_day_bounds("2026-09-02", 8),
             Some((1_788_278_400, 1_788_364_800))
         );
+    }
+
+    #[test]
+    fn returns_an_exclusive_end_for_a_multi_day_range() {
+        assert_eq!(
+            utc_range_bounds("2026-09-02", "2026-09-04", 8),
+            Some((1_788_278_400, 1_788_537_600))
+        );
+    }
+
+    #[test]
+    fn converts_local_datetime_range_to_a_half_open_utc_interval() {
+        assert_eq!(
+            utc_datetime_range_bounds("2026-09-02T09:30", "2026-09-02T10:15", 8),
+            Some((1_788_312_600, 1_788_315_360))
+        );
+    }
+
+    #[test]
+    fn rejects_a_reversed_range() {
+        assert_eq!(utc_range_bounds("2026-09-04", "2026-09-02", 8), None);
+    }
+
+    #[test]
+    fn rejects_invalid_range_dates() {
+        assert_eq!(utc_range_bounds("2026-02-30", "2026-09-02", 8), None);
+        assert_eq!(utc_range_bounds("not-a-date", "2026-09-02", 8), None);
     }
 }

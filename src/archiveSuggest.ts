@@ -15,16 +15,19 @@ export function archivedQuickSelects(
   activeNames: Iterable<string> = [],
 ): Project[] {
   const normalized = query.trim().toLowerCase();
-  const excluded = new Set(activeNames);
+  const excluded = new Set(
+    Array.from(activeNames, (name) => name.trim().toLowerCase()),
+  );
   const seen = new Set<string>();
   const matches: Project[] = [];
 
   for (const project of archivedProjects) {
     const name = project.name.trim();
-    if (name === "" || seen.has(name)) continue;
-    if (excluded.has(name)) continue;
-    if (normalized !== "" && !name.toLowerCase().includes(normalized)) continue;
-    seen.add(name);
+    const normalizedName = name.toLowerCase();
+    if (name === "" || seen.has(normalizedName)) continue;
+    if (excluded.has(normalizedName)) continue;
+    if (normalized !== "" && !normalizedName.includes(normalized)) continue;
+    seen.add(normalizedName);
     matches.push(project);
   }
   return matches;

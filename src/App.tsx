@@ -6,7 +6,7 @@ import { elapsedSeconds, formatDuration, localDateKey } from "./timer";
 import { initialTimerState, timerReducer, type Project, type TimeSegment } from "./appState";
 import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
 import { resolveViewMode, type ViewMode } from "./viewMode";
-import { segmentEndLabel } from "./historyModel";
+import { isExportRangeValid, segmentEndLabel } from "./historyModel";
 import { archivedQuickSelects } from "./archiveSuggest";
 import { DailyTimeline } from "./DailyTimeline";
 import {
@@ -54,6 +54,10 @@ function shiftDate(dateKey: string, offset: number): string {
 
 function timezoneOffsetHours(): number {
   return -new Date().getTimezoneOffset() / 60;
+}
+
+function localDateTimeKey(date: Date): string {
+  return `${localDateKey(date)}T${date.toTimeString().slice(0, 5)}`;
 }
 
 function projectTotalSeconds(projectId: number, segments: TimeSegment[], now: number): number {
@@ -328,6 +332,10 @@ function HistoryWindow() {
   const [segments, setSegments] = useState<TimeSegment[]>([]);
   const [now, setNow] = useState(nowSeconds());
   const [error, setError] = useState<string | null>(null);
+  const [exportStart, setExportStart] = useState(() => `${shiftDate(localDateKey(new Date()), -6)}T00:00`);
+  const [exportEnd, setExportEnd] = useState(() => localDateTimeKey(new Date()));
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -351,6 +359,24 @@ function HistoryWindow() {
       await invoke("hide_history_window");
     } catch (reason) {
       setError(friendlyError(reason));
+    }
+  };
+
+  const exportData = async () => {
+    setExporting(true);
+    setExportNote(null);
+    try {
+      const path = await invoke<string>("export_data_to_file", {
+        start: exportStart,
+        end: exportEnd,
+        timezoneOffsetHours: timezoneOffsetHours(),
+      });
+      setExportNote(path);
+    } catch (reason) {
+      setExportNote(null);
+      setError(friendlyError(reason));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -390,6 +416,34 @@ function HistoryWindow() {
         <button className="round-button" onClick={() => setDate(shiftDate(date, 1))}>›</button>
         <button className="today-button" onClick={() => setDate(localDateKey(new Date()))}>今天</button>
       </div>
+      <section className="export-controls">
+        <label>导出 JSON</label>
+        <div className="export-range">
+          <input
+            aria-label="起始时间"
+            className="export-input"
+            type="datetime-local"
+            value={exportStart}
+            onChange={(event) => setExportStart(event.target.value)}
+          />
+          <span className="export-separator">至</span>
+          <input
+            aria-label="结束时间"
+            className="export-input"
+            type="datetime-local"
+            value={exportEnd}
+            onChange={(event) => setExportEnd(event.target.value)}
+          />
+        </div>
+        <button
+          className="export-button"
+          disabled={exporting || !isExportRangeValid(exportStart, exportEnd)}
+          onClick={() => void exportData()}
+        >
+          {exporting ? "导出中…" : "导出"}
+        </button>
+      </section>
+      {exportNote && <p className="export-note success">已导出到 {exportNote}</p>}
       <section className="stats-row">
         <div><span>工作总计</span><strong>{formatDuration(totalSeconds)}</strong></div>
         <div><span>项目数</span><strong>{rows.length}</strong></div>

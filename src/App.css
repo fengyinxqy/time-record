@@ -18,13 +18,14 @@ h1 { margin: 0; color: #fcfbff; font-size: 22px; letter-spacing: -.04em; }
 .icon-button.selected { border-color: #8479f3; background: #302a5c; color: #fff; }
 
 .project-list { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
-.project-row { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 58px; border: 1px solid #2d2a42; border-radius: 12px; background: #1a1927; padding: 10px 10px 10px 13px; transition: .18s ease; }
+.project-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 58px; border: 1px solid #2d2a42; border-radius: 12px; background: #1a1927; padding: 10px 10px 10px 13px; transition: .18s ease; }
 .project-row:hover { border-color: #6157c0; transform: translateX(2px); }
 .project-row.active { border-color: #7166d8; background: #28224d; box-shadow: 0 8px 24px rgba(50, 43, 116, .2); }
-.project-dot { display: block; width: 8px; height: 8px; border-radius: 50%; }
 .project-copy { min-width: 0; }
-.project-copy strong { display: block; overflow: hidden; color: #f4f1ff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.project-copy span { display: block; min-height: 14px; margin-top: 3px; color: #6ed8ae; font-size: 9px; }
+.project-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.project-dot { display: block; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+.project-title strong { display: block; min-width: 0; flex: 1; overflow: hidden; color: #f4f1ff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.project-state { display: block; min-height: 14px; margin-top: 3px; color: #6ed8ae; font-size: 9px; }
 .project-row time { color: #c6c1e4; font: 11px "DM Mono", monospace; white-space: nowrap; }
 .project-control { min-width: 45px; border: 1px solid #4a4569; border-radius: 8px; background: #211e34; color: #d8d3f5; padding: 7px 8px; font-size: 10px; }
 .project-control:hover { border-color: #978dfb; color: #fff; }

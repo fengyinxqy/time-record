@@ -193,10 +193,12 @@ function TimerWindow() {
             : projectTotalSeconds(project.id, segments, displayNow);
           return (
             <div className={`project-row ${active ? "active" : ""}`} key={project.id}>
-              <span className="project-dot" style={{ backgroundColor: project.color }} />
               <div className="project-copy">
-                <strong>{project.name}</strong>
-                <span>{active ? "正在计时" : ""}</span>
+                <div className="project-title">
+                  <span className="project-dot" style={{ backgroundColor: project.color }} />
+                  <strong>{project.name}</strong>
+                </div>
+                <span className="project-state">{active ? "正在计时" : ""}</span>
               </div>
               <time>{formatDuration(duration)}</time>
               <button className="project-control" onClick={() => void toggleProject(project)}>

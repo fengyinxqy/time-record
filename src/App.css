@@ -54,6 +54,17 @@ h1 { margin: 0; color: #fcfbff; font-size: 22px; letter-spacing: -.04em; }
 .date-title strong { color: #f7f5ff; font-size: 16px; }
 .date-title span { color: #858099; font: 11px "DM Mono", monospace; }
 .today-button { margin-left: auto; }
+.export-controls { display: flex; align-items: center; gap: 10px; margin-top: 20px; padding: 14px 16px; border: 1px solid #2b293d; border-radius: 12px; background: rgba(26, 25, 39, .7); }
+.export-controls label { color: #817c96; font-size: 11px; }
+.export-controls .export-range { display: flex; align-items: center; gap: 8px; flex: 1; }
+.export-input { border: 1px solid #383650; border-radius: 8px; background: #1a1927; color: #d9d5f2; font: 11px "DM Mono", monospace; padding: 7px 9px; color-scheme: dark; max-width: 184px; }
+.export-input:focus { outline: none; border-color: #7166d8; }
+.export-controls .export-separator { color: #77728d; }
+.export-button { border: 1px solid #483f8f; border-radius: 9px; background: #342b6e; color: #e6e2ff; padding: 8px 14px; font-size: 11px; cursor: pointer; transition: .18s ease; white-space: nowrap; }
+.export-button:hover:not(:disabled) { background: #41379a; border-color: #7166d8; color: #fff; }
+.export-button:disabled { opacity: .5; cursor: default; }
+.export-note { margin-top: 10px; color: #817c96; font-size: 11px; }
+.export-note.success { color: #7ed4a8; }
 .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .stats-row > div { display: flex; flex-direction: column; gap: 8px; border: 1px solid #2b293d; border-radius: 12px; background: rgba(26, 25, 39, .7); padding: 14px; }
 .stats-row span { color: #817c96; font-size: 11px; }

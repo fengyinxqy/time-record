@@ -31,4 +31,9 @@ describe("archivedQuickSelects", () => {
     const projects = [archived("写代码"), archived("阅读")];
     expect(archivedQuickSelects(projects, "写", ["写代码"]).map((p) => p.name)).toEqual([]);
   });
+
+  it("skips an active project name regardless of letter casing", () => {
+    const projects = [archived("GitHub 维护"), archived("阅读")];
+    expect(archivedQuickSelects(projects, "git", ["github 维护"]).map((p) => p.name)).toEqual([]);
+  });
 });

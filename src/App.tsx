@@ -7,6 +7,7 @@ import { initialTimerState, timerReducer, type Project, type TimeSegment } from 
 import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
 import { resolveViewMode, type ViewMode } from "./viewMode";
 import { segmentEndLabel } from "./historyModel";
+import { archivedQuickSelects } from "./archiveSuggest";
 import { DailyTimeline } from "./DailyTimeline";
 import {
   initialStartupSettings,
@@ -72,24 +73,29 @@ function projectExists(name: string, projects: Project[]): boolean {
 function TimerWindow() {
   const [timer, dispatch] = useReducer(timerReducer, initialTimerState);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
   const [segments, setSegments] = useState<TimeSegment[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
+  const [nameOpen, setNameOpen] = useState(false);
+  const [confirmingArchiveId, setConfirmingArchiveId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
 
   const refresh = useCallback(async () => {
     const today = localDateKey(new Date());
     try {
-      const [projectList, snapshot, daySegments] = await Promise.all([
+      const [projectList, archivedList, snapshot, daySegments] = await Promise.all([
         invoke<Project[]>("list_projects", { includeArchived: false }),
+        invoke<Project[]>("list_projects", { includeArchived: true }),
         invoke<TimerSnapshot>("get_timer_state"),
         invoke<TimeSegment[]>("get_segments_for_date", {
           date: today,
           timezoneOffsetHours: timezoneOffsetHours(),
         }),
       ]);
-      setProjects(projectList);
+      setProjects(projectList.filter((project) => !project.archived));
+      setArchivedProjects(archivedList.filter((project) => project.archived));
       setSegments(daySegments);
       dispatch({
         type: "hydrated",
@@ -145,6 +151,17 @@ function TimerWindow() {
     }
   };
 
+  const archiveProject = async (project: Project) => {
+    try {
+      await invoke("archive_project", { projectId: project.id });
+      setConfirmingArchiveId(null);
+      await refresh();
+    } catch (reason) {
+      setConfirmingArchiveId(null);
+      setError(friendlyError(reason));
+    }
+  };
+
   const addProject = async (event: React.FormEvent) => {
     event.preventDefault();
     const name = newProjectName.trim();
@@ -159,6 +176,7 @@ function TimerWindow() {
         input: { name, color: COLORS[projects.length % COLORS.length] },
       });
       setNewProjectName("");
+      setNameOpen(false);
       await refresh();
     } catch (reason) {
       setError(friendlyError(reason));
@@ -167,11 +185,29 @@ function TimerWindow() {
 
   const updateNewProjectName = (value: string) => {
     setNewProjectName(value);
+    setNameOpen(true);
     setNameError(
       value.trim() && projectExists(value, projects)
         ? `已存在名为「${value.trim()}」的项目`
         : null,
     );
+  };
+
+  const suggestions = useMemo(
+    () => archivedQuickSelects(archivedProjects, newProjectName, projects.map((project) => project.name)),
+    [archivedProjects, newProjectName, projects],
+  );
+
+  const pickSuggestion = async (project: Project) => {
+    try {
+      await invoke("restore_project", { projectId: project.id });
+      setNewProjectName("");
+      setNameError(null);
+      setNameOpen(false);
+      await refresh();
+    } catch (reason) {
+      setError(friendlyError(reason));
+    }
   };
 
   const showHistory = async () => {
@@ -226,6 +262,20 @@ function TimerWindow() {
               <button className="project-control" onClick={() => void toggleProject(project)}>
                 {active ? "暂停" : "开始"}
               </button>
+              {confirmingArchiveId === project.id ? (
+                <div className="archive-confirm">
+                  <span>归档该项目？</span>
+                  <button className="archive-link confirm" onClick={() => void archiveProject(project)}>确认</button>
+                  <button className="archive-link" onClick={() => setConfirmingArchiveId(null)}>取消</button>
+                </div>
+              ) : (
+                <button
+                  className="project-control archive"
+                  onClick={() => setConfirmingArchiveId(project.id)}
+                >
+                  归档
+                </button>
+              )}
             </div>
           );
         })}
@@ -233,13 +283,36 @@ function TimerWindow() {
       </section>
 
       <form className="add-project" onSubmit={addProject}>
-        <input
-          value={newProjectName}
-          onChange={(event) => updateNewProjectName(event.target.value)}
-          placeholder="输入新的工作内容…"
-          aria-label="新的工作内容"
-          aria-invalid={nameError !== null}
-        />
+        <div className="add-project-field">
+          <input
+            value={newProjectName}
+            onChange={(event) => updateNewProjectName(event.target.value)}
+            onFocus={() => setNameOpen(true)}
+            onBlur={() => window.setTimeout(() => setNameOpen(false), 120)}
+            placeholder="输入新的工作内容…"
+            aria-label="新的工作内容"
+            aria-invalid={nameError !== null}
+          />
+          {nameOpen && suggestions.length > 0 && (
+            <div className="archive-suggest" role="listbox">
+              {suggestions.map((project) => (
+                <button
+                  type="button"
+                  key={project.id}
+                  className="archive-suggest-item"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    void pickSuggestion(project);
+                  }}
+                  role="option"
+                >
+                  <span className="project-dot" style={{ backgroundColor: project.color }} />
+                  {project.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button type="submit" disabled={!newProjectName.trim() || nameError !== null}>新增</button>
       </form>
       {nameError && <p className="error-message" role="alert">{nameError}</p>}

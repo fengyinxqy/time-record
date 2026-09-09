@@ -32,9 +32,14 @@ h1 { margin: 0; color: #fcfbff; font-size: 22px; letter-spacing: -.04em; }
 .project-row.active .project-control { border-color: #d26378; background: #d26378; color: #fff; }
 .empty-projects { border: 1px dashed #3b3754; border-radius: 12px; color: #77718b; padding: 25px 12px; text-align: center; font-size: 11px; }
 .add-project { display: flex; gap: 8px; margin-top: 14px; }
-.add-project input { min-width: 0; flex: 1; border: 1px solid #363249; border-radius: 9px; outline: 0; background: #15141f; color: #f4f1ff; padding: 10px 11px; font-size: 11px; }
-.add-project input:focus { border-color: #8277ed; }
-.add-project input::placeholder { color: #68647a; }
+.add-project-field { position: relative; min-width: 0; flex: 1; }
+.add-project-field input { display: block; width: 100%; min-width: 0; border: 1px solid #363249; border-radius: 9px; outline: 0; background: #15141f; color: #f4f1ff; padding: 10px 11px; font-size: 11px; }
+.add-project-field input:focus { border-color: #8277ed; }
+.add-project-field input::placeholder { color: #68647a; }
+.archive-suggest { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; display: flex; flex-direction: column; border: 1px solid #3b3754; border-radius: 10px; background: #1c1b2a; box-shadow: 0 12px 28px rgba(0,0,0,.45); overflow: hidden; }
+.archive-suggest-item { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; color: #d6d2ee; padding: 9px 11px; font-size: 11px; text-align: left; }
+.archive-suggest-item:hover { background: #26233c; color: #fff; }
+.archive-suggest .project-dot { flex: 0 0 auto; }
 .add-project button { border: 0; border-radius: 9px; background: #8479f3; color: #fff; padding: 0 15px; font-size: 11px; font-weight: 700; }
 .add-project button:hover { background: #978dfb; }
 .add-project button:disabled { cursor: not-allowed; opacity: .4; }

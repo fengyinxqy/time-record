@@ -7,6 +7,7 @@ import { initialTimerState, timerReducer, type Project, type TimeSegment } from 
 import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
 import { resolveViewMode, type ViewMode } from "./viewMode";
 import { segmentEndLabel } from "./historyModel";
+import { archivedQuickSelects } from "./archiveSuggest";
 import { DailyTimeline } from "./DailyTimeline";
 import {
   initialStartupSettings,
@@ -65,23 +66,27 @@ function projectTotalSeconds(projectId: number, segments: TimeSegment[], now: nu
 function TimerWindow() {
   const [timer, dispatch] = useReducer(timerReducer, initialTimerState);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
   const [segments, setSegments] = useState<TimeSegment[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
+  const [nameOpen, setNameOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
 
   const refresh = useCallback(async () => {
     const today = localDateKey(new Date());
     try {
-      const [projectList, snapshot, daySegments] = await Promise.all([
+      const [projectList, archivedList, snapshot, daySegments] = await Promise.all([
         invoke<Project[]>("list_projects", { includeArchived: false }),
+        invoke<Project[]>("list_projects", { includeArchived: true }),
         invoke<TimerSnapshot>("get_timer_state"),
         invoke<TimeSegment[]>("get_segments_for_date", {
           date: today,
           timezoneOffsetHours: timezoneOffsetHours(),
         }),
       ]);
-      setProjects(projectList);
+      setProjects(projectList.filter((project) => !project.archived));
+      setArchivedProjects(archivedList.filter((project) => project.archived));
       setSegments(daySegments);
       dispatch({
         type: "hydrated",
@@ -146,10 +151,21 @@ function TimerWindow() {
         input: { name, color: COLORS[projects.length % COLORS.length] },
       });
       setNewProjectName("");
+      setNameOpen(false);
       await refresh();
     } catch (reason) {
       setError(friendlyError(reason));
     }
+  };
+
+  const suggestions = useMemo(
+    () => archivedQuickSelects(archivedProjects, newProjectName, projects.map((project) => project.name)),
+    [archivedProjects, newProjectName, projects],
+  );
+
+  const pickSuggestion = async (project: Project) => {
+    setNewProjectName(project.name);
+    setNameOpen(false);
   };
 
   const showHistory = async () => {
@@ -211,12 +227,38 @@ function TimerWindow() {
       </section>
 
       <form className="add-project" onSubmit={addProject}>
-        <input
-          value={newProjectName}
-          onChange={(event) => setNewProjectName(event.target.value)}
-          placeholder="输入新的工作内容…"
-          aria-label="新的工作内容"
-        />
+        <div className="add-project-field">
+          <input
+            value={newProjectName}
+            onChange={(event) => {
+              setNewProjectName(event.target.value);
+              setNameOpen(true);
+            }}
+            onFocus={() => setNameOpen(true)}
+            onBlur={() => window.setTimeout(() => setNameOpen(false), 120)}
+            placeholder="输入新的工作内容…"
+            aria-label="新的工作内容"
+          />
+          {(nameOpen && suggestions.length > 0) && (
+            <div className="archive-suggest" role="listbox">
+              {suggestions.map((project) => (
+                <button
+                  type="button"
+                  key={project.id}
+                  className="archive-suggest-item"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    void pickSuggestion(project);
+                  }}
+                  role="option"
+                >
+                  <span className="project-dot" style={{ backgroundColor: project.color }} />
+                  {project.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button type="submit" disabled={!newProjectName.trim()}>新增</button>
       </form>
       <p className="list-hint">点击右侧按钮开始或暂停。同一时间只运行一个项目。</p>

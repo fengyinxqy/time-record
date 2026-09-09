@@ -19,6 +19,11 @@ data/*.db-shm
 
 # Local Git worktrees
 .worktrees/
+.claude/worktrees/
+
+# Tool artifacts
+.playwright-cli/
+output/
 
 # IDE and OS files
 .idea/

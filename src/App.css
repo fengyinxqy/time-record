@@ -18,7 +18,7 @@ h1 { margin: 0; color: #fcfbff; font-size: 22px; letter-spacing: -.04em; }
 .icon-button.selected { border-color: #8479f3; background: #302a5c; color: #fff; }
 
 .project-list { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
-.project-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 58px; border: 1px solid #2d2a42; border-radius: 12px; background: #1a1927; padding: 10px 10px 10px 13px; transition: .18s ease; }
+.project-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; min-height: 58px; border: 1px solid #2d2a42; border-radius: 12px; background: #1a1927; padding: 10px 10px 10px 13px; transition: .18s ease; }
 .project-row:hover { border-color: #6157c0; transform: translateX(2px); }
 .project-row.active { border-color: #7166d8; background: #28224d; box-shadow: 0 8px 24px rgba(50, 43, 116, .2); }
 .project-copy { min-width: 0; }
@@ -30,6 +30,16 @@ h1 { margin: 0; color: #fcfbff; font-size: 22px; letter-spacing: -.04em; }
 .project-control { min-width: 45px; border: 1px solid #4a4569; border-radius: 8px; background: #211e34; color: #d8d3f5; padding: 7px 8px; font-size: 10px; }
 .project-control:hover { border-color: #978dfb; color: #fff; }
 .project-row.active .project-control { border-color: #d26378; background: #d26378; color: #fff; }
+.project-control.archive { border-color: #413d5c; background: #1d1b2b; color: #8f8aa8; }
+.project-control.archive:hover { border-color: #6157c0; color: #fff; }
+.project-row.active .project-control.archive { border-color: #413d5c; background: #1d1b2b; color: #8f8aa8; }
+.project-row.active .project-control.archive:hover { border-color: #6157c0; color: #fff; }
+.archive-confirm { display: flex; align-items: center; gap: 6px; border: 1px solid #d26378; border-radius: 9px; background: #2b151d; padding: 5px 7px; }
+.archive-confirm span { color: #f0a4b5; font-size: 10px; white-space: nowrap; }
+.archive-link { border: 0; border-radius: 6px; background: transparent; color: #c3c0dc; padding: 4px 6px; font-size: 10px; }
+.archive-link:hover { color: #fff; }
+.archive-link.confirm { background: #d26378; color: #fff; font-weight: 700; }
+.archive-link.confirm:hover { background: #e0758b; }
 .empty-projects { border: 1px dashed #3b3754; border-radius: 12px; color: #77718b; padding: 25px 12px; text-align: center; font-size: 11px; }
 .add-project { display: flex; gap: 8px; margin-top: 14px; }
 .add-project input { min-width: 0; flex: 1; border: 1px solid #363249; border-radius: 9px; outline: 0; background: #15141f; color: #f4f1ff; padding: 10px 11px; font-size: 11px; }

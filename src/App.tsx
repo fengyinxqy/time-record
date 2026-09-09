@@ -69,6 +69,7 @@ function TimerWindow() {
   const [newProjectName, setNewProjectName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
+  const [confirmingArchiveId, setConfirmingArchiveId] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     const today = localDateKey(new Date());
@@ -133,6 +134,17 @@ function TimerWindow() {
       }
       await refresh();
     } catch (reason) {
+      setError(friendlyError(reason));
+    }
+  };
+
+  const archiveProject = async (project: Project) => {
+    try {
+      await invoke("archive_project", { projectId: project.id });
+      setConfirmingArchiveId(null);
+      await refresh();
+    } catch (reason) {
+      setConfirmingArchiveId(null);
       setError(friendlyError(reason));
     }
   };
@@ -204,6 +216,20 @@ function TimerWindow() {
               <button className="project-control" onClick={() => void toggleProject(project)}>
                 {active ? "暂停" : "开始"}
               </button>
+              {confirmingArchiveId === project.id ? (
+                <div className="archive-confirm">
+                  <span>归档该项目？</span>
+                  <button className="archive-link confirm" onClick={() => void archiveProject(project)}>确认</button>
+                  <button className="archive-link" onClick={() => setConfirmingArchiveId(null)}>取消</button>
+                </div>
+              ) : (
+                <button
+                  className="project-control archive"
+                  onClick={() => setConfirmingArchiveId(project.id)}
+                >
+                  归档
+                </button>
+              )}
             </div>
           );
         })}

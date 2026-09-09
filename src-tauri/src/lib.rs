@@ -98,6 +98,20 @@ fn create_project(input: NewProject, state: State<'_, AppState>) -> Result<Proje
 }
 
 #[tauri::command]
+fn rename_project(
+    project_id: i64,
+    new_name: String,
+    state: State<'_, AppState>,
+) -> Result<Project, String> {
+    database(&state)?.rename_project(project_id, &new_name)
+}
+
+#[tauri::command]
+fn project_is_name_taken(name: String, state: State<'_, AppState>) -> Result<bool, String> {
+    database(&state)?.project_is_name_taken(&name)
+}
+
+#[tauri::command]
 fn archive_project(project_id: i64, state: State<'_, AppState>) -> Result<(), String> {
     database(&state)?.archive_project(project_id)
 }
@@ -313,6 +327,8 @@ pub fn run() {
             get_timer_state,
             list_projects,
             create_project,
+            rename_project,
+            project_is_name_taken,
             archive_project,
             start_project,
             pause_timer,

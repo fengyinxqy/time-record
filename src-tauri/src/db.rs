@@ -141,21 +141,61 @@ impl Database {
         if name.is_empty() {
             return Err("project name must not be empty".to_string());
         }
+        if self.project_name_taken(name, None)? {
+            return Err("project name already exists".to_string());
+        }
         self.connection
             .execute(
                 "INSERT INTO projects (name, color, created_at) VALUES (?1, ?2, ?3)",
                 params![name, input.color, now],
             )
-            .map_err(|error| {
-                if error.to_string().contains("UNIQUE constraint failed") {
-                    "project name already exists".to_string()
-                } else {
-                    error.to_string()
-                }
-            })?;
+            .map_err(|error| error.to_string())?;
         let id = self.connection.last_insert_rowid();
         self.project_by_id(id)?
             .ok_or_else(|| "created project missing".to_string())
+    }
+
+    pub fn rename_project(&self, project_id: i64, new_name: &str) -> Result<Project, String> {
+        let name = new_name.trim();
+        if name.is_empty() {
+            return Err("project name must not be empty".to_string());
+        }
+        if self.project_name_taken(name, Some(project_id))? {
+            return Err("project name already exists".to_string());
+        }
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE projects SET name = ?1 WHERE id = ?2",
+                params![name, project_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 0 {
+            return Err("project not found".to_string());
+        }
+        self.project_by_id(project_id)?
+            .ok_or_else(|| "renamed project missing".to_string())
+    }
+
+    /// True when any project (including archived ones) already uses the name,
+    /// compared case-insensitively. When `exclude_id` is given, that project is
+    /// skipped so renaming a project to its own name (or a case variant of it)
+    /// is allowed.
+    fn project_name_taken(&self, name: &str, exclude_id: Option<i64>) -> Result<bool, String> {
+        let normalized = name.trim().to_lowercase();
+        for project in self.list_projects(true)? {
+            if Some(project.id) == exclude_id {
+                continue;
+            }
+            if project.name.trim().to_lowercase() == normalized {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    pub fn project_is_name_taken(&self, name: &str) -> Result<bool, String> {
+        self.project_name_taken(name, None)
     }
 
     pub fn list_projects(&self, include_archived: bool) -> Result<Vec<Project>, String> {
@@ -537,5 +577,57 @@ mod tests {
         assert!(db.silent_start().unwrap());
         db.set_silent_start(false).unwrap();
         assert!(!db.silent_start().unwrap());
+    }
+
+    #[test]
+    fn rejects_a_duplicate_project_name_case_insensitively() {
+        let db = Database::open_in_memory().unwrap();
+        db.create_project(project("写代码"), 100).unwrap();
+
+        let err = db.create_project(project("写代码"), 200).unwrap_err();
+        assert_eq!(err, "project name already exists");
+    }
+
+    #[test]
+    fn rejects_a_duplicate_name_differing_only_in_case() {
+        let db = Database::open_in_memory().unwrap();
+        db.create_project(project("Read"), 100).unwrap();
+
+        assert_eq!(
+            db.create_project(project("read"), 200).unwrap_err(),
+            "project name already exists"
+        );
+    }
+
+    #[test]
+    fn duplicate_check_considers_archived_projects() {
+        let db = Database::open_in_memory().unwrap();
+        let archived = db.create_project(project("旧项目"), 100).unwrap();
+        db.archive_project(archived.id).unwrap();
+
+        assert!(db.project_is_name_taken("旧项目").unwrap());
+        assert_eq!(
+            db.create_project(project("旧项目"), 200).unwrap_err(),
+            "project name already exists"
+        );
+    }
+
+    #[test]
+    fn rejects_renaming_to_an_existing_name() {
+        let db = Database::open_in_memory().unwrap();
+        let first = db.create_project(project("写代码"), 100).unwrap();
+        db.create_project(project("阅读"), 200).unwrap();
+
+        let err = db.rename_project(first.id, "阅读").unwrap_err();
+        assert_eq!(err, "project name already exists");
+    }
+
+    #[test]
+    fn allows_renaming_to_the_same_name_or_a_case_variant() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("Read"), 100).unwrap();
+
+        assert_eq!(db.rename_project(project.id, "Read").unwrap().name, "Read");
+        assert_eq!(db.rename_project(project.id, "READ").unwrap().name, "READ");
     }
 }

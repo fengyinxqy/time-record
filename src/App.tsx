@@ -62,11 +62,19 @@ function projectTotalSeconds(projectId: number, segments: TimeSegment[], now: nu
   }, 0);
 }
 
+function projectExists(name: string, projects: Project[]): boolean {
+  const normalized = name.trim().toLowerCase();
+  return projects.some(
+    (project) => project.name.trim().toLowerCase() === normalized,
+  );
+}
+
 function TimerWindow() {
   const [timer, dispatch] = useReducer(timerReducer, initialTimerState);
   const [projects, setProjects] = useState<Project[]>([]);
   const [segments, setSegments] = useState<TimeSegment[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
 
@@ -141,6 +149,11 @@ function TimerWindow() {
     event.preventDefault();
     const name = newProjectName.trim();
     if (!name) return;
+    if (projectExists(name, projects)) {
+      setNameError(`已存在名为「${name}」的项目`);
+      return;
+    }
+    setNameError(null);
     try {
       await invoke("create_project", {
         input: { name, color: COLORS[projects.length % COLORS.length] },
@@ -150,6 +163,15 @@ function TimerWindow() {
     } catch (reason) {
       setError(friendlyError(reason));
     }
+  };
+
+  const updateNewProjectName = (value: string) => {
+    setNewProjectName(value);
+    setNameError(
+      value.trim() && projectExists(value, projects)
+        ? `已存在名为「${value.trim()}」的项目`
+        : null,
+    );
   };
 
   const showHistory = async () => {
@@ -213,12 +235,14 @@ function TimerWindow() {
       <form className="add-project" onSubmit={addProject}>
         <input
           value={newProjectName}
-          onChange={(event) => setNewProjectName(event.target.value)}
+          onChange={(event) => updateNewProjectName(event.target.value)}
           placeholder="输入新的工作内容…"
           aria-label="新的工作内容"
+          aria-invalid={nameError !== null}
         />
-        <button type="submit" disabled={!newProjectName.trim()}>新增</button>
+        <button type="submit" disabled={!newProjectName.trim() || nameError !== null}>新增</button>
       </form>
+      {nameError && <p className="error-message" role="alert">{nameError}</p>}
       <p className="list-hint">点击右侧按钮开始或暂停。同一时间只运行一个项目。</p>
       {(error || timer.error) && <p className="error-message">{error || timer.error}</p>}
     </main>

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { Dialog, Popover, Switch } from "radix-ui";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
+import { useTheme } from "./useTheme";
 import { elapsedSeconds, formatDuration, localDateKey } from "./timer";
 import { initialTimerState, timerReducer, type Project, type TimeSegment } from "./appState";
 import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
@@ -21,7 +23,7 @@ type TimerSnapshot = {
   elapsedSeconds: number;
 };
 
-const COLORS = ["#7c6cf2", "#63c6a0", "#e39a62", "#d26378", "#5da6d8"];
+const COLORS = ["#a69bd6", "#86ad94", "#d9a071", "#d88fa4", "#86a9ce"];
 
 function friendlyError(error: unknown): string {
   return typeof error === "string" ? error : "操作失败，请稍后重试";
@@ -82,7 +84,7 @@ function TimerWindow() {
   const [newProjectName, setNewProjectName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [nameOpen, setNameOpen] = useState(false);
-  const [confirmingArchiveId, setConfirmingArchiveId] = useState<number | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
 
@@ -158,10 +160,10 @@ function TimerWindow() {
   const archiveProject = async (project: Project) => {
     try {
       await invoke("archive_project", { projectId: project.id });
-      setConfirmingArchiveId(null);
+      setArchiveTarget(null);
       await refresh();
     } catch (reason) {
-      setConfirmingArchiveId(null);
+      setArchiveTarget(null);
       setError(friendlyError(reason));
     }
   };
@@ -189,7 +191,6 @@ function TimerWindow() {
 
   const updateNewProjectName = (value: string) => {
     setNewProjectName(value);
-    setNameOpen(true);
     setNameError(
       value.trim() && projectExists(value, projects)
         ? `已存在名为「${value.trim()}」的项目`
@@ -239,11 +240,11 @@ function TimerWindow() {
           <h1>时间记录</h1>
         </div>
         <div className="header-actions">
-          <button className={`icon-button ${pinned ? "selected" : ""}`} onClick={togglePinned}>
+          <button className={`icon-button ${pinned ? "selected" : ""}`} onClick={() => void togglePinned()}>
             {pinned ? "置顶中" : "置顶"}
           </button>
-          <button className="icon-button" onClick={showHistory}>历史</button>
-          <button className="icon-button" onClick={showSettings}>设置</button>
+          <button className="icon-button" onClick={() => void showHistory()}>历史</button>
+          <button className="icon-button" onClick={() => void showSettings()}>设置</button>
         </div>
       </header>
 
@@ -255,31 +256,18 @@ function TimerWindow() {
             : projectTotalSeconds(project.id, segments, displayNow);
           return (
             <div className={`project-row ${active ? "active" : ""}`} key={project.id}>
-              <div className="project-copy">
-                <div className="project-title">
-                  <span className="project-dot" style={{ backgroundColor: project.color }} />
-                  <strong>{project.name}</strong>
+                <div className="project-copy">
+                  <div className="project-title">
+                    <span className="project-dot" style={{ backgroundColor: project.color }} />
+                    <strong>{project.name}</strong>
+                  </div>
+                  <span className="project-state">{active ? "正在计时" : ""}</span>
                 </div>
-                <span className="project-state">{active ? "正在计时" : ""}</span>
-              </div>
-              <time>{formatDuration(duration)}</time>
-              <button className="project-control" onClick={() => void toggleProject(project)}>
-                {active ? "暂停" : "开始"}
-              </button>
-              {confirmingArchiveId === project.id ? (
-                <div className="archive-confirm">
-                  <span>归档该项目？</span>
-                  <button className="archive-link confirm" onClick={() => void archiveProject(project)}>确认</button>
-                  <button className="archive-link" onClick={() => setConfirmingArchiveId(null)}>取消</button>
+                <time>{formatDuration(duration)}</time>
+                <div className="project-actions">
+                  <button className="project-control" onClick={() => void toggleProject(project)}>{active ? "暂停" : "开始"}</button>
+                  <button className="project-control archive" onClick={() => setArchiveTarget(project)}>归档</button>
                 </div>
-              ) : (
-                <button
-                  className="project-control archive"
-                  onClick={() => setConfirmingArchiveId(project.id)}
-                >
-                  归档
-                </button>
-              )}
             </div>
           );
         })}
@@ -287,41 +275,51 @@ function TimerWindow() {
       </section>
 
       <form className="add-project" onSubmit={addProject}>
-        <div className="add-project-field">
-          <input
-            value={newProjectName}
-            onChange={(event) => updateNewProjectName(event.target.value)}
-            onFocus={() => setNameOpen(true)}
-            onBlur={() => window.setTimeout(() => setNameOpen(false), 120)}
-            placeholder="输入新的工作内容…"
-            aria-label="新的工作内容"
-            aria-invalid={nameError !== null}
-          />
-          {nameOpen && suggestions.length > 0 && (
-            <div className="archive-suggest" role="listbox">
-              {suggestions.map((project) => (
-                <button
-                  type="button"
-                  key={project.id}
-                  className="archive-suggest-item"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    void pickSuggestion(project);
-                  }}
-                  role="option"
-                >
-                  <span className="project-dot" style={{ backgroundColor: project.color }} />
-                  {project.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <Popover.Root open={nameOpen && suggestions.length > 0} onOpenChange={setNameOpen}>
+          <div className="add-project-field">
+            <Popover.Anchor asChild>
+              <input
+                value={newProjectName}
+                onChange={(event) => updateNewProjectName(event.target.value)}
+                onFocus={() => setNameOpen(true)}
+                placeholder="输入新的工作内容…"
+                aria-label="新的工作内容"
+                aria-invalid={nameError !== null}
+                aria-controls="archived-projects"
+              />
+            </Popover.Anchor>
+            <Popover.Portal>
+              <Popover.Content className="archive-suggest" id="archived-projects" side="top" align="start" sideOffset={6} onOpenAutoFocus={(event) => event.preventDefault()}>
+                <p className="archive-suggest-label">归档项目</p>
+                {suggestions.map((project) => (
+                  <button type="button" key={project.id} className="archive-suggest-item" onClick={() => void pickSuggestion(project)} role="option">
+                    <span className="project-dot" style={{ backgroundColor: project.color }} />
+                    <span>{project.name}</span>
+                    <small>恢复</small>
+                  </button>
+                ))}
+              </Popover.Content>
+            </Popover.Portal>
+          </div>
+        </Popover.Root>
         <button type="submit" disabled={!newProjectName.trim() || nameError !== null}>新增</button>
       </form>
       {nameError && <p className="error-message" role="alert">{nameError}</p>}
-      <p className="list-hint">点击右侧按钮开始或暂停。同一时间只运行一个项目。</p>
+      <p className="list-hint">同一时间只运行一个项目。</p>
       {(error || timer.error) && <p className="error-message">{error || timer.error}</p>}
+      <Dialog.Root open={archiveTarget !== null} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="archive-dialog">
+            <Dialog.Title>归档项目</Dialog.Title>
+            <Dialog.Description>确定归档「{archiveTarget?.name}」吗？你仍可从新工作内容输入框恢复它。</Dialog.Description>
+            <div className="dialog-actions">
+              <Dialog.Close asChild><button className="dialog-button" type="button">取消</button></Dialog.Close>
+              <button className="dialog-button danger" type="button" onClick={() => archiveTarget && void archiveProject(archiveTarget)}>确认归档</button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </main>
   );
 }
@@ -336,6 +334,7 @@ function HistoryWindow() {
   const [exportEnd, setExportEnd] = useState(() => localDateTimeKey(new Date()));
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -365,8 +364,9 @@ function HistoryWindow() {
   const exportData = async () => {
     setExporting(true);
     setExportNote(null);
+    setExportError(null);
     try {
-      const path = await invoke<string>("export_data_to_file", {
+      const path = await invoke<string | null>("export_data_to_file", {
         start: exportStart,
         end: exportEnd,
         timezoneOffsetHours: timezoneOffsetHours(),
@@ -374,7 +374,7 @@ function HistoryWindow() {
       setExportNote(path);
     } catch (reason) {
       setExportNote(null);
-      setError(friendlyError(reason));
+      setExportError(friendlyError(reason));
     } finally {
       setExporting(false);
     }
@@ -400,7 +400,6 @@ function HistoryWindow() {
     const clipped = clipSegmentToDay(segment, dayStart, dayEnd, now);
     return total + (clipped ? clipped.endedAt - clipped.startedAt : 0);
   }, 0), [dayEnd, dayStart, now, segments]);
-
   return (
     <main className="history-shell">
       <header className="history-header">
@@ -416,34 +415,6 @@ function HistoryWindow() {
         <button className="round-button" onClick={() => setDate(shiftDate(date, 1))}>›</button>
         <button className="today-button" onClick={() => setDate(localDateKey(new Date()))}>今天</button>
       </div>
-      <section className="export-controls">
-        <label>导出 JSON</label>
-        <div className="export-range">
-          <input
-            aria-label="起始时间"
-            className="export-input"
-            type="datetime-local"
-            value={exportStart}
-            onChange={(event) => setExportStart(event.target.value)}
-          />
-          <span className="export-separator">至</span>
-          <input
-            aria-label="结束时间"
-            className="export-input"
-            type="datetime-local"
-            value={exportEnd}
-            onChange={(event) => setExportEnd(event.target.value)}
-          />
-        </div>
-        <button
-          className="export-button"
-          disabled={exporting || !isExportRangeValid(exportStart, exportEnd)}
-          onClick={() => void exportData()}
-        >
-          {exporting ? "导出中…" : "导出"}
-        </button>
-      </section>
-      {exportNote && <p className="export-note success">已导出到 {exportNote}</p>}
       <section className="stats-row">
         <div><span>工作总计</span><strong>{formatDuration(totalSeconds)}</strong></div>
         <div><span>项目数</span><strong>{rows.length}</strong></div>
@@ -457,6 +428,7 @@ function HistoryWindow() {
         )}
       </>
       {rows.length > 0 && <section className="entry-list">
+        <div className="entry-heading"><h2>记录明细</h2><span>时段 / 时长</span></div>
         {rows.flatMap((row) => row.segments.map((segment) => {
           const clipped = clipSegmentToDay(segment, dayStart, dayEnd, now);
           if (!clipped) return null;
@@ -468,12 +440,23 @@ function HistoryWindow() {
           </div>;
         }))}
       </section>}
+      <section className="export-controls">
+        <h2>导出记录</h2>
+        <div className="export-range">
+          <input aria-label="起始时间" className="export-input" type="datetime-local" value={exportStart} onChange={(event) => setExportStart(event.target.value)} />
+          <span className="export-separator">至</span>
+          <input aria-label="结束时间" className="export-input" type="datetime-local" value={exportEnd} onChange={(event) => setExportEnd(event.target.value)} />
+        </div>
+        <button className="export-button" disabled={exporting || !isExportRangeValid(exportStart, exportEnd)} onClick={() => void exportData()}>{exporting ? "导出中…" : "导出 JSON"}</button>
+      </section>
+      {exportNote && <p className="export-note success">已导出到 {exportNote}</p>}
+      {exportError && <p className="error-message" role="alert">{exportError}</p>}
       {error && <p className="error-message">{error}</p>}
     </main>
   );
 }
 
-function SettingsWindow() {
+function SettingsWindow({ theme }: { theme: ReturnType<typeof useTheme> }) {
   const [settings, dispatch] = useReducer(startupSettingsReducer, initialStartupSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -548,50 +531,61 @@ function SettingsWindow() {
         <button className="icon-button" onClick={() => void closeSettings()}>关闭</button>
       </header>
       <section className="settings-list" aria-busy={loading}>
+        <div className="settings-row theme-row">
+          <div className="settings-copy">
+            <strong>外观</strong>
+            <span>自动模式跟随系统主题</span>
+          </div>
+          <div className="theme-options" role="group" aria-label="外观模式">
+            {(["auto", "light", "dark"] as const).map((mode, index) => (
+              <button key={mode} type="button" aria-pressed={theme.mode === mode} onClick={() => theme.updateTheme(mode)}>
+                {["自动", "亮色", "深色"][index]}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="settings-row">
           <div className="settings-copy">
             <strong>开机自启动</strong>
             <span>登录 Windows 后自动运行时间记录</span>
           </div>
-          <button
-            aria-checked={settings.autostartEnabled}
+          <Switch.Root
+            className="toggle"
+            checked={settings.autostartEnabled}
             aria-label="开机自启动"
-            className={`toggle ${settings.autostartEnabled ? "enabled" : ""}`}
             disabled={loading || saving}
-            onClick={() => void updateAutostart()}
-            role="switch"
-          ><span /></button>
+            onCheckedChange={() => void updateAutostart()}
+          ><Switch.Thumb className="toggle-thumb" /></Switch.Root>
         </div>
         <div className="settings-row">
           <div className="settings-copy">
             <strong>静默启动</strong>
             <span>开机自启动时仅驻留系统托盘</span>
           </div>
-          <button
-            aria-checked={settings.silentStart}
+          <Switch.Root
+            className="toggle"
+            checked={settings.silentStart}
             aria-label="静默启动"
-            className={`toggle ${settings.silentStart ? "enabled" : ""}`}
             disabled={loading || saving || !settings.autostartEnabled}
-            onClick={() => void updateSilentStart()}
-            role="switch"
-          ><span /></button>
+            onCheckedChange={() => void updateSilentStart()}
+          ><Switch.Thumb className="toggle-thumb" /></Switch.Root>
         </div>
       </section>
+      {theme.themeError && <p className="error-message" role="alert">{theme.themeError}</p>}
       {settings.error && <p className="error-message">{settings.error}</p>}
     </main>
   );
 }
 
 export default function App() {
+  const theme = useTheme();
   const [viewMode, setViewMode] = useState<ViewMode | null>(null);
 
   useEffect(() => {
     setViewMode(resolveViewMode(getCurrentWindow().label, window.location.search));
   }, []);
 
-  if (viewMode === null) {
-    return <main className="loading-shell">正在打开…</main>;
-  }
-  if (viewMode === "settings") return <SettingsWindow />;
+  if (viewMode === null) return <main className="loading-shell">正在打开…</main>;
+  if (viewMode === "settings") return <SettingsWindow theme={theme} />;
   return viewMode === "history" ? <HistoryWindow /> : <TimerWindow />;
 }

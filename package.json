@@ -15,6 +15,7 @@
     "@svar-ui/react-gantt": "^2.7.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "radix-ui": "^1.6.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

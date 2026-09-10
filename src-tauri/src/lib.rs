@@ -10,6 +10,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, State, Window, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
+#[cfg(windows)]
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
 
 struct AppState {
     database: Mutex<Database>,
@@ -154,29 +157,59 @@ fn export_filename(start: &str, end: &str) -> String {
 }
 
 #[tauri::command]
-fn export_data_to_file(
+async fn export_data_to_file(
     start: String,
     end: String,
     timezone_offset_hours: i32,
     app: AppHandle,
+    window: tauri::WebviewWindow,
     state: State<'_, AppState>,
-) -> Result<String, String> {
+) -> Result<Option<String>, String> {
     let (start_utc, end_exclusive_utc) =
         domain::utc_datetime_range_bounds(&start, &end, timezone_offset_hours).ok_or_else(
             || "invalid datetime range, expected YYYY-MM-DDTHH:MM start and end".to_string(),
         )?;
     let data = database(&state)?.export_range(start_utc, end_exclusive_utc)?;
-    let exports_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?
-        .join("exports");
-    std::fs::create_dir_all(&exports_dir).map_err(|error| error.to_string())?;
     let filename = export_filename(&start, &end);
-    let path = exports_dir.join(filename);
     let json = serde_json::to_string_pretty(&data).map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = app
+            .dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("导出时间记录")
+            .add_filter("JSON", &["json"])
+            .set_file_name(filename)
+            .blocking_save_file();
+        let path = selected
+            .map(|file| file.into_path().map_err(|error| error.to_string()))
+            .transpose()?;
+        write_export(path, json)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn write_export(path: Option<PathBuf>, json: String) -> Result<Option<String>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
     std::fs::write(&path, json).map_err(|error| error.to_string())?;
-    Ok(path.to_string_lossy().into_owned())
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+fn set_window_theme(window: tauri::WebviewWindow, dark: bool) -> Result<(), String> {
+    window
+        .set_theme(Some(if dark {
+            tauri::Theme::Dark
+        } else {
+            tauri::Theme::Light
+        }))
+        .map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    apply_title_bar_palette(&window, dark);
+    Ok(())
 }
 
 #[tauri::command]
@@ -335,6 +368,7 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let silent_start = autostart::has_silent_start_argument(std::env::args());
             let app_data_dir = app.path().app_data_dir()?;
@@ -373,6 +407,7 @@ pub fn run() {
             heartbeat,
             get_segments_for_date,
             export_data_to_file,
+            set_window_theme,
             open_history_window,
             hide_history_window,
             set_always_on_top,
@@ -397,8 +432,28 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{export_filename, valid_startup_executable, StartupSettings};
+    use super::{export_filename, title_bar_attributes, valid_startup_executable, StartupSettings};
     use std::path::PathBuf;
+
+    #[test]
+    fn cancelled_export_does_not_write_a_file() {
+        assert_eq!(super::write_export(None, "{}".to_string()).unwrap(), None);
+    }
+
+    #[test]
+    fn exports_json_to_the_selected_location_and_reports_write_errors() {
+        let dir =
+            std::env::temp_dir().join(format!("time-record-export-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("自选记录.json");
+        let json = "{\"projects\":[],\"segments\":[]}";
+        let result = super::write_export(Some(path.clone()), json.to_string()).unwrap();
+        assert_eq!(result, Some(path.to_string_lossy().into_owned()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), json);
+        assert!(super::write_export(Some(dir.clone()), json.to_string()).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
 
     #[test]
     fn creates_a_windows_safe_export_filename_from_datetime_values() {
@@ -447,5 +502,53 @@ mod tests {
                 "silentStart": false,
             })
         );
+    }
+
+    #[test]
+    fn title_bar_uses_dark_controls_only_for_dark_mode() {
+        assert_eq!(title_bar_attributes(false)[0], (20, 0));
+        assert_eq!(title_bar_attributes(true)[0], (20, 1));
+        assert_ne!(
+            title_bar_attributes(false)[2],
+            title_bar_attributes(true)[2]
+        );
+    }
+}
+
+fn title_bar_attributes(dark: bool) -> [(u32, u32); 4] {
+    if dark {
+        [
+            (20, 1),
+            (34, 0x0047_4e45),
+            (35, 0x002b_2d29),
+            (36, 0x00e9_f0ed),
+        ]
+    } else {
+        [
+            (20, 0),
+            (34, 0x00e2_e8e7),
+            (35, 0x00f2_f6f7),
+            (36, 0x0036_3b34),
+        ]
+    }
+}
+
+#[cfg(windows)]
+fn apply_title_bar_palette(window: &tauri::WebviewWindow, dark: bool) {
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+
+    for (attribute, value) in title_bar_attributes(dark) {
+        // Each DWM value is a four-byte BOOL or COLORREF. Unsupported attributes
+        // are ignored so older Windows versions retain their system default.
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWINDOWATTRIBUTE(attribute as i32),
+                (&value as *const u32).cast(),
+                std::mem::size_of::<u32>() as u32,
+            );
+        }
     }
 }

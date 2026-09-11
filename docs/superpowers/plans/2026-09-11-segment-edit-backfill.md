@@ -472,7 +472,7 @@ git commit -m "feat: update and delete time segments"
     fn parses_segment_bounds_and_rejects_bad_datetimes() {
         assert_eq!(
             parse_segment_bounds("2026-09-02T09:30", "2026-09-02T10:15", 8),
-            Ok((1_788_312_600, 1_788_315_360))
+            Ok((1_788_312_600, 1_788_315_300))
         );
         assert_eq!(
             parse_segment_bounds("nope", "2026-09-02T10:15", 8).unwrap_err(),

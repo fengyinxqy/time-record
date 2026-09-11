@@ -392,6 +392,8 @@ export function HistoryWindow() {
   const [draftError, setDraftError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TimeSegment | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -432,7 +434,8 @@ export function HistoryWindow() {
   };
 
   const submitDraft = async () => {
-    if (!draft) return;
+    if (!draft || saving) return;
+    setSaving(true);
     try {
       if (draft.mode === "create") {
         await invoke("create_segment", {
@@ -451,9 +454,12 @@ export function HistoryWindow() {
         });
       }
       setDraft(null);
+      setDraftError(null);
       await loadHistory();
     } catch (reason) {
       setDraftError(segmentEditErrorMessage(reason));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -463,13 +469,17 @@ export function HistoryWindow() {
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
       await invoke("delete_segment", { segmentId: deleteTarget.id });
       setDeleteTarget(null);
+      setDeleteError(null);
       await loadHistory();
     } catch (reason) {
       setDeleteError(segmentEditErrorMessage(reason));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -520,6 +530,9 @@ export function HistoryWindow() {
     const clipped = clipSegmentToDay(segment, dayStart, dayEnd, now);
     return total + (clipped ? clipped.endedAt - clipped.startedAt : 0);
   }, 0), [dayEnd, dayStart, now, segments]);
+  const deleteLabel = deleteTarget
+    ? `「${projects.find((project) => project.id === deleteTarget.projectId)?.name ?? "未知项目"}」${formatClock(deleteTarget.startedAt)} – ${deleteTarget.endedAt === null ? "计时中" : formatClock(deleteTarget.endedAt)}`
+    : "";
   return (
     <main className="history-shell">
       <header className="history-header">
@@ -597,16 +610,16 @@ export function HistoryWindow() {
               </label>
               <label className="dialog-field">
                 <span>开始时间</span>
-                <input aria-label="开始时间" type="datetime-local" value={draft.start} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
+                <input aria-label="开始时间" type="datetime-local" max={toDateTimeLocal(now)} value={draft.start} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
               </label>
               <label className="dialog-field">
                 <span>结束时间</span>
-                <input aria-label="结束时间" type="datetime-local" value={draft.end} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
+                <input aria-label="结束时间" type="datetime-local" max={toDateTimeLocal(now)} value={draft.end} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
               </label>
               {draftError && <p className="error-message" role="alert">{draftError}</p>}
               <div className="dialog-actions">
                 <Dialog.Close asChild><button className="dialog-button" type="button">取消</button></Dialog.Close>
-                <button className="dialog-button primary" type="button" disabled={!isSegmentDraftValid(draft.start, draft.end)} onClick={() => void submitDraft()}>保存</button>
+                <button className="dialog-button primary" type="button" disabled={saving || !isSegmentDraftValid(draft.start, draft.end)} onClick={() => void submitDraft()}>{saving ? "保存中…" : "保存"}</button>
               </div>
             </>}
           </Dialog.Content>
@@ -617,11 +630,11 @@ export function HistoryWindow() {
           <Dialog.Overlay className="dialog-overlay" />
           <Dialog.Content className="segment-dialog">
             <Dialog.Title>删除记录</Dialog.Title>
-            <Dialog.Description>确定删除这段记录吗？删除后无法恢复。</Dialog.Description>
+            <Dialog.Description>确定删除{deleteLabel}这段记录吗？删除后无法恢复。</Dialog.Description>
             {deleteError && <p className="error-message" role="alert">{deleteError}</p>}
             <div className="dialog-actions">
               <Dialog.Close asChild><button className="dialog-button" type="button">取消</button></Dialog.Close>
-              <button className="dialog-button danger" type="button" onClick={() => void confirmDelete()}>确认删除</button>
+              <button className="dialog-button danger" type="button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? "删除中…" : "确认删除"}</button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

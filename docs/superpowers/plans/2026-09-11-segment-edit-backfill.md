@@ -665,6 +665,59 @@ describe("segmentEditErrorMessage", () => {
 });
 ```
 
+评审追加的 7 个边界用例（分别放进上面对应的 `describe` 块内）：
+
+```ts
+// describe("toDateTimeLocal")
+it("formats the unix epoch as a valid local datetime", () => {
+  expect(toDateTimeLocal(0)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+});
+
+// describe("isSegmentDraftValid")
+it("accepts values that carry seconds", () => {
+  expect(isSegmentDraftValid("2026-09-02T09:00:00", "2026-09-02T10:00:30")).toBe(true);
+});
+
+// describe("defaultSegmentDraft")
+it("clamps the default window to the selected day when today is very early", () => {
+  const now = new Date(2026, 8, 11, 0, 30, 0).getTime() / 1000;
+  expect(defaultSegmentDraft("2026-09-11", now)).toEqual({
+    start: "2026-09-11T00:00",
+    end: "2026-09-11T00:30",
+  });
+});
+
+it("keeps the morning hour exactly at 10:00", () => {
+  const now = new Date(2026, 8, 11, 10, 0, 0).getTime() / 1000;
+  expect(defaultSegmentDraft("2026-09-11", now)).toEqual({
+    start: "2026-09-11T09:00",
+    end: "2026-09-11T10:00",
+  });
+});
+
+it("truncates seconds from now when clamping", () => {
+  const now = new Date(2026, 8, 11, 8, 30, 45).getTime() / 1000;
+  expect(defaultSegmentDraft("2026-09-11", now)).toEqual({
+    start: "2026-09-11T07:30",
+    end: "2026-09-11T08:30",
+  });
+});
+
+it("returns the morning hour for a future date, leaving gating to the caller", () => {
+  const now = new Date(2026, 8, 11, 15, 0, 0).getTime() / 1000;
+  expect(defaultSegmentDraft("2026-09-12", now)).toEqual({
+    start: "2026-09-12T09:00",
+    end: "2026-09-12T10:00",
+  });
+});
+
+// describe("segmentEditErrorMessage")
+it("does not fall through to Object.prototype members", () => {
+  expect(segmentEditErrorMessage("toString")).toBe("toString");
+  expect(segmentEditErrorMessage("constructor")).toBe("constructor");
+});
+```
+
 - [ ] **Step 2: 运行测试，确认失败**
 
 Run: `npx vitest run src/segmentEditModel.test.ts`
@@ -676,7 +729,7 @@ Expected: FAIL，报找不到模块 `./segmentEditModel`
 
 ```ts
 const DEFAULT_DURATION_MINUTES = 60;
-const DATETIME_LOCAL_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+const DATETIME_LOCAL_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
 const SECONDS_PER_MINUTE = 60;
 const MILLISECONDS_PER_SECOND = 1000;
 
@@ -693,7 +746,8 @@ export function isSegmentDraftValid(start: string, end: string): boolean {
   if (!DATETIME_LOCAL_PATTERN.test(start) || !DATETIME_LOCAL_PATTERN.test(end)) {
     return false;
   }
-  return start < end;
+  // datetime-local 可能携带秒（HH:MM:SS）；比较只取到分钟，保持固定宽度字典序。
+  return start.slice(0, 16) < end.slice(0, 16);
 }
 
 export function defaultSegmentDraft(
@@ -710,28 +764,32 @@ export function defaultSegmentDraft(
     Math.floor(nowSeconds / SECONDS_PER_MINUTE) *
     SECONDS_PER_MINUTE *
     MILLISECONDS_PER_SECOND;
-  const startMillis =
+  // 已知限制：夏令时切换当天按秒数回推，可能与挂钟直觉不符。
+  const dayStartMillis = new Date(`${dateKey}T00:00`).getTime();
+  const startMillis = Math.max(
     endMillis -
-    DEFAULT_DURATION_MINUTES * SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND;
+      DEFAULT_DURATION_MINUTES * SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND,
+    dayStartMillis,
+  );
   return {
     start: toDateTimeLocal(startMillis / MILLISECONDS_PER_SECOND),
     end: toDateTimeLocal(endMillis / MILLISECONDS_PER_SECOND),
   };
 }
 
-const ERROR_MESSAGES: Record<string, string> = {
-  segment_datetime_invalid: "时间格式不正确",
-  segment_range_invalid: "开始时间必须早于结束时间",
-  segment_in_future: "不能补录尚未发生的时间",
-  project_not_found: "所选项目不存在",
-  segment_not_found: "这段记录已不存在，请刷新后重试",
-  segment_active: "请先暂停计时，再编辑这段记录",
-  segment_overlap: "该时段与已有记录重叠",
-};
+const ERROR_MESSAGES = new Map<string, string>([
+  ["segment_datetime_invalid", "时间格式不正确"],
+  ["segment_range_invalid", "开始时间必须早于结束时间"],
+  ["segment_in_future", "不能补录尚未发生的时间"],
+  ["project_not_found", "所选项目不存在"],
+  ["segment_not_found", "这段记录已不存在，请刷新后重试"],
+  ["segment_active", "请先暂停计时，再编辑这段记录"],
+  ["segment_overlap", "该时段与已有记录重叠"],
+]);
 
 export function segmentEditErrorMessage(error: unknown): string {
   if (typeof error !== "string") return "操作失败，请稍后重试";
-  return ERROR_MESSAGES[error] ?? error;
+  return ERROR_MESSAGES.get(error) ?? error;
 }
 ```
 
@@ -842,6 +900,23 @@ describe("HistoryWindow segment editing", () => {
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_segment", { segmentId: 1 });
+    });
+  });
+
+  it("disables the backfill entry for a future date", async () => {
+    render(
+      <StrictMode>
+        <HistoryWindow />
+      </StrictMode>,
+    );
+
+    await screen.findByRole("button", { name: "编辑" });
+    expect(screen.getByRole("button", { name: "补录" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "›" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "补录" })).toBeDisabled();
     });
   });
 });
@@ -957,26 +1032,37 @@ type SegmentDraft = {
   };
 ```
 
-- [ ] **Step 5: 改造明细区标题与行**
+- [ ] **Step 5: 把「补录」入口放进日期工具栏，并给明细行加编辑/删除**
 
-把现有的
+**为什么「补录」不放在明细区**：明细区整体包在 `{rows.length > 0 && ...}` 条件里（`App.tsx:469`），而补录最常见的场景正是某天**完全没有记录**的空白——此时明细区不渲染，入口就不存在，等于无法补录空白天。所以入口必须放在始终可见的日期工具栏上。
+
+把日期工具栏里「今天」按钮那一行
 
 ```tsx
-      {rows.length > 0 && <section className="entry-list">
-        <div className="entry-heading"><h2>记录明细</h2><span>时段 / 时长</span></div>
+        <button className="today-button" onClick={() => setDate(localDateKey(new Date()))}>今天</button>
 ```
 
 替换为
 
 ```tsx
-      {rows.length > 0 && <section className="entry-list">
-        <div className="entry-heading">
-          <h2>记录明细</h2>
-          <div className="entry-heading-actions">
-            <span>时段 / 时长</span>
-            <button className="entry-action" type="button" disabled={projects.length === 0} onClick={openCreateDraft}>补录</button>
-          </div>
-        </div>
+        <button className="today-button" onClick={() => setDate(localDateKey(new Date()))}>今天</button>
+        <button
+          className="entry-action"
+          type="button"
+          disabled={projects.length === 0 || date > localDateKey(new Date())}
+          title={date > localDateKey(new Date()) ? "不能补录未来日期" : undefined}
+          onClick={openCreateDraft}
+        >
+          补录
+        </button>
+```
+
+「未来日期禁用」是必要的：日期工具栏可以用 `›` 无界向后翻，未来日期上的补录默认值必然被后端以 `segment_in_future` 拒绝，应在入口就拦下，而不是先给一个注定失败的默认值再报错。
+
+明细区的标题行**保持不变**，仍是：
+
+```tsx
+        <div className="entry-heading"><h2>记录明细</h2><span>时段 / 时长</span></div>
 ```
 
 把行渲染中 `</time>` 之后的结尾替换为：
@@ -1065,7 +1151,6 @@ Expected: PASS
 .dialog-field span { color: var(--muted); font-size: 11px; }
 .dialog-field select, .dialog-field input { border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text); padding: 7px 8px; font-size: 12px; color-scheme: inherit; }
 .dialog-field select:focus, .dialog-field input:focus { border-color: var(--accent); outline: none; }
-.entry-heading-actions { display: flex; align-items: center; gap: 10px; }
 .entry-action { border: 1px solid var(--border-strong); border-radius: 8px; background: transparent; color: var(--muted); padding: 4px 9px; font-size: 11px; white-space: nowrap; }
 .entry-action:hover:not(:disabled) { background: var(--surface-raised); color: var(--text); }
 .entry-action:disabled { cursor: default; opacity: .4; }

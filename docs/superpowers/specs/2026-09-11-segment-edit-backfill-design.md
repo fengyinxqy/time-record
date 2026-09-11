@@ -106,7 +106,7 @@ LIMIT 1
 
 在 [HistoryWindow](src/App.tsx#L366) 中：
 
-1. **入口**：[App.tsx:469-481](src/App.tsx#L469-L481) 的「记录明细」标题行增加「补录」按钮；每个 `entry-row` 增加「编辑」与「删除」。进行中的行（`segmentEndLabel(segment) === "计时中"`）两个按钮置灰并附 `title` 说明需先暂停。
+1. **入口**：「补录」按钮放在**日期工具栏**（「今天」按钮旁），因此**始终可见**。补录最常用的场景恰恰是某天完全没有记录的空白，而明细区整体包在 `{rows.length > 0 && ...}` 条件下（[App.tsx:469](src/App.tsx#L469)），把入口放进明细区会导致空白天无法补录。按钮在项目列表为空、或所选日期晚于今天时禁用，后者提示「不能补录未来日期」（后端仍以 `segment_in_future` 兜底）。每个 `entry-row` 增加「编辑」与「删除」，进行中的行（`segmentEndLabel(segment) === "计时中"`）两个按钮置灰并附 `title` 说明需先暂停。
 2. **表单 Dialog**：新增一个 [Dialog](src/App.tsx#L349-L361)，新增与编辑共用。内容为项目下拉（`<select>`，选项来自 `list_projects` 已取的**含归档**列表）+ 两个 `datetime-local` 输入，提交按钮受 `isSegmentDraftValid` 控制。「补录」以 `defaultSegmentDraft(date)` 预填并默认选中第一个项目；「编辑」以该段的 `projectId` 与 `toDateTimeLocal(startedAt)` / `toDateTimeLocal(endedAt)` 预填。
 3. **删除确认**：复用同款 Dialog 做确认，不使用 `window.confirm`。
 4. **提交**：调用对应命令，成功则关闭 Dialog 并调用现有 `loadHistory()` 立即刷新（2 秒轮询为兜底）；失败则保持 Dialog 打开，把 `segmentEditErrorMessage` 的结果显示在 Dialog 内，不清空用户输入。

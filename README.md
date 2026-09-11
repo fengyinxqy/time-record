@@ -143,6 +143,16 @@ npm run build
 
 前端产物写入 `dist/`，这一步不生成桌面安装包。
 
+### 发布新版本
+
+1. 将 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 中的版本修改为相同的 `X.Y.Z`，并提交这些修改。
+2. 在本地运行 `npm test`、`cargo test --manifest-path src-tauri/Cargo.toml` 和 `npm run build`，确认测试与前端构建通过。
+3. 创建并推送与版本对应的 `vX.Y.Z` 标签。
+4. 等待 GitHub Actions 创建 draft Release。工作流会再次检查标签与三个版本文件是否一致，并构建 Windows 安装包。
+5. 在 GitHub UI 中编辑真实的更新说明，确认 draft Release 已附带 MSI 和 NSIS（`.exe`）安装包后，再手动发布。
+
+预发布版本不要使用上述正式发布标签流程；请在 GitHub UI 中创建 Release 并标记为 prerelease。客户端不会显示 prerelease。
+
 ## 数据与导出
 
 ### 本地存储

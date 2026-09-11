@@ -1,0 +1,40 @@
+name: Release Windows application
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - name: Verify tag matches application versions
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".Substring(1)
+          $packageVersion = node -p "require('./package.json').version"
+          $tauriVersion = node -p "require('./src-tauri/tauri.conf.json').version"
+          $cargoVersion = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($tag -ne $packageVersion -or $tag -ne $tauriVersion -or $tag -ne $cargoVersion) {
+            throw "Tag v$tag must match package.json, tauri.conf.json, and Cargo.toml versions."
+          }
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: npm run build
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 时间记录 ${{ github.ref_name }}
+          releaseBody: 请在此查看本版本的更新内容。
+          releaseDraft: true
+          prerelease: false

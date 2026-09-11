@@ -58,10 +58,10 @@
     }
 ```
 
-- [ ] **Step 2: 运行测试，确认编译失败**
+- [ ] **Step 2: 运行测试确认新用例的基线**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml domain`
-Expected: 编译失败，报 `utc_datetime_to_utc` 为私有项（`E0603: function ... is private`）
+Expected: PASS（`mod tests` 是 `domain` 的子模块，本就能访问父模块的私有项，因此这一步**不会**因 `pub` 而编译失败）。该用例是转换逻辑的回归测试；`pub` 改动的真正验证在 Task 4——`lib.rs` 跨模块调用 `domain::utc_datetime_to_utc` 时，若可见性未放开会直接编译失败。
 
 - [ ] **Step 3: 改可见性**
 

@@ -601,6 +601,7 @@ export function HistoryWindow() {
           <Dialog.Overlay className="dialog-overlay" />
           <Dialog.Content className="segment-dialog">
             <Dialog.Title>{draft?.mode === "edit" ? "编辑记录" : "补录记录"}</Dialog.Title>
+            <Dialog.Description>选择项目并填写开始与结束时间。时段不能与已有记录重叠，也不能晚于当前时间。</Dialog.Description>
             {draft && <>
               <label className="dialog-field">
                 <span>项目</span>
@@ -610,11 +611,11 @@ export function HistoryWindow() {
               </label>
               <label className="dialog-field">
                 <span>开始时间</span>
-                <input aria-label="开始时间" type="datetime-local" max={toDateTimeLocal(now)} value={draft.start} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
+                <input aria-label="记录开始时间" type="datetime-local" max={toDateTimeLocal(now)} value={draft.start} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
               </label>
               <label className="dialog-field">
                 <span>结束时间</span>
-                <input aria-label="结束时间" type="datetime-local" max={toDateTimeLocal(now)} value={draft.end} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
+                <input aria-label="记录结束时间" type="datetime-local" max={toDateTimeLocal(now)} value={draft.end} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
               </label>
               {draftError && <p className="error-message" role="alert">{draftError}</p>}
               <div className="dialog-actions">

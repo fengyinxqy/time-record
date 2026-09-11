@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { HistoryWindow } from "./App";
+import { toDateTimeLocal } from "./segmentEditModel";
 
 type MockSegment = {
   id: number;
@@ -106,6 +107,20 @@ describe("HistoryWindow segment editing", () => {
         expect.objectContaining({ segmentId: 1, projectId: 1 }),
       );
     });
+  });
+
+  // 该段起始于昨天 23:00：原始值 23:00 与当日裁剪值 00:00 不同，因此「记录开始时间」这条断言
+  // 能真正区分实现用的是原始时间还是 clipped 值；结束时间在当日内，两种取法相同，仅作完整性检查。
+  it("prefills the edit dialog with the segment's original bounds", async () => {
+    const startedAt = harness.dayStartSeconds - 3600;
+    const endedAt = harness.dayStartSeconds + 1800;
+    harness.segments = [{ id: 1, projectId: 1, startedAt, endedAt, createdAt: startedAt }];
+    renderHistory();
+
+    await userEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    expect(screen.getByLabelText("记录开始时间")).toHaveValue(toDateTimeLocal(startedAt));
+    expect(screen.getByLabelText("记录结束时间")).toHaveValue(toDateTimeLocal(endedAt));
   });
 
   it("keeps the dialog open and shows a Chinese error when saving fails", async () => {

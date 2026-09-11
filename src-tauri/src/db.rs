@@ -1262,6 +1262,7 @@ mod tests {
 
         assert!(db.segments_between(0, 20_000).unwrap().is_empty());
         assert!(db.export_range(0, 20_000).unwrap().time_segments.is_empty());
+        assert!(db.segment_by_id(created.id).unwrap().is_none());
     }
 
     #[test]
@@ -1269,5 +1270,47 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
 
         assert_eq!(db.delete_segment(99).unwrap_err(), "segment_not_found");
+    }
+
+    #[test]
+    fn rejects_an_update_to_a_zero_length_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let created = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .update_segment(created.id, project.id, 2_000, 2_000, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_range_invalid");
+    }
+
+    #[test]
+    fn rejects_an_update_over_the_running_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let created = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+        db.start_project(project.id, 20_000).unwrap();
+
+        let err = db
+            .update_segment(created.id, project.id, 19_000, 21_000, 22_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_overlap");
+    }
+
+    #[test]
+    fn allows_updating_a_segment_into_an_archived_project() {
+        let db = Database::open_in_memory().unwrap();
+        let first = db.create_project(project("写代码"), 1_000).unwrap();
+        let archived_project = db.create_project(project("旧项目"), 1_100).unwrap();
+        db.archive_project(archived_project.id, 1_200).unwrap();
+        let created = db.create_segment(first.id, 2_000, 3_000, 10_000).unwrap();
+
+        let updated = db
+            .update_segment(created.id, archived_project.id, 2_000, 3_000, 11_000)
+            .unwrap();
+
+        assert_eq!(updated.project_id, archived_project.id);
     }
 }

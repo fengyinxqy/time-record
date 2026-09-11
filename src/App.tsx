@@ -10,6 +10,12 @@ import { initialTimerState, timerReducer, type Project, type TimeSegment } from 
 import { clipSegmentToDay, groupSegmentsByProject } from "./projectModel";
 import { resolveViewMode, type ViewMode } from "./viewMode";
 import { isExportRangeValid, segmentEndLabel } from "./historyModel";
+import {
+  defaultSegmentDraft,
+  isSegmentDraftValid,
+  segmentEditErrorMessage,
+  toDateTimeLocal,
+} from "./segmentEditModel";
 import { archivedQuickSelects } from "./archiveSuggest";
 import { DailyTimeline } from "./DailyTimeline";
 import { UpdateSection } from "./UpdateSection";
@@ -363,7 +369,15 @@ export function TimerWindow() {
   );
 }
 
-function HistoryWindow() {
+type SegmentDraft = {
+  mode: "create" | "edit";
+  segmentId: number | null;
+  projectId: number;
+  start: string;
+  end: string;
+};
+
+export function HistoryWindow() {
   const [date, setDate] = useState(() => localDateKey(new Date()));
   const [projects, setProjects] = useState<Project[]>([]);
   const [segments, setSegments] = useState<TimeSegment[]>([]);
@@ -374,6 +388,10 @@ function HistoryWindow() {
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<SegmentDraft | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TimeSegment | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -391,6 +409,69 @@ function HistoryWindow() {
       setError(friendlyError(reason));
     }
   }, [date]);
+
+  const openCreateDraft = () => {
+    setDraftError(null);
+    setDraft({
+      mode: "create",
+      segmentId: null,
+      projectId: projects[0]?.id ?? 0,
+      ...defaultSegmentDraft(date, nowSeconds()),
+    });
+  };
+
+  const openEditDraft = (segment: TimeSegment) => {
+    setDraftError(null);
+    setDraft({
+      mode: "edit",
+      segmentId: segment.id,
+      projectId: segment.projectId,
+      start: toDateTimeLocal(segment.startedAt),
+      end: toDateTimeLocal(segment.endedAt ?? nowSeconds()),
+    });
+  };
+
+  const submitDraft = async () => {
+    if (!draft) return;
+    try {
+      if (draft.mode === "create") {
+        await invoke("create_segment", {
+          projectId: draft.projectId,
+          start: draft.start,
+          end: draft.end,
+          timezoneOffsetHours: timezoneOffsetHours(),
+        });
+      } else {
+        await invoke("update_segment", {
+          segmentId: draft.segmentId,
+          projectId: draft.projectId,
+          start: draft.start,
+          end: draft.end,
+          timezoneOffsetHours: timezoneOffsetHours(),
+        });
+      }
+      setDraft(null);
+      await loadHistory();
+    } catch (reason) {
+      setDraftError(segmentEditErrorMessage(reason));
+    }
+  };
+
+  const openDeleteConfirm = (segment: TimeSegment) => {
+    setDeleteError(null);
+    setDeleteTarget(segment);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await invoke("delete_segment", { segmentId: deleteTarget.id });
+      setDeleteTarget(null);
+      await loadHistory();
+    } catch (reason) {
+      setDeleteError(segmentEditErrorMessage(reason));
+    }
+  };
 
   const closeHistory = async () => {
     try {
@@ -453,6 +534,15 @@ function HistoryWindow() {
         <div className="date-title"><strong>{formatDateLabel(date)}</strong><span>{date}</span></div>
         <button className="round-button" onClick={() => setDate(shiftDate(date, 1))}>›</button>
         <button className="today-button" onClick={() => setDate(localDateKey(new Date()))}>今天</button>
+        <button
+          className="entry-action"
+          type="button"
+          disabled={projects.length === 0 || date > localDateKey(new Date())}
+          title={date > localDateKey(new Date()) ? "不能补录未来日期" : undefined}
+          onClick={openCreateDraft}
+        >
+          补录
+        </button>
       </div>
       <section className="stats-row">
         <div><span>工作总计</span><strong>{formatDuration(totalSeconds)}</strong></div>
@@ -476,6 +566,8 @@ function HistoryWindow() {
             <span className="entry-color" style={{ backgroundColor: row.project.color }} />
             <div><strong>{row.project.name}</strong><span>{formatClock(clipped.startedAt)} – {running ? "计时中" : formatClock(clipped.endedAt)}</span></div>
             <time>{formatDuration(clipped.endedAt - clipped.startedAt)}</time>
+            <button className="entry-action" type="button" disabled={running} title={running ? "请先暂停计时" : undefined} onClick={() => openEditDraft(segment)}>编辑</button>
+            <button className="entry-action danger" type="button" disabled={running} title={running ? "请先暂停计时" : undefined} onClick={() => openDeleteConfirm(segment)}>删除</button>
           </div>;
         }))}
       </section>}
@@ -491,6 +583,49 @@ function HistoryWindow() {
       {exportNote && <p className="export-note success">已导出到 {exportNote}</p>}
       {exportError && <p className="error-message" role="alert">{exportError}</p>}
       {error && <p className="error-message">{error}</p>}
+      <Dialog.Root open={draft !== null} onOpenChange={(open) => { if (!open) { setDraft(null); setDraftError(null); } }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="segment-dialog">
+            <Dialog.Title>{draft?.mode === "edit" ? "编辑记录" : "补录记录"}</Dialog.Title>
+            {draft && <>
+              <label className="dialog-field">
+                <span>项目</span>
+                <select aria-label="项目" value={draft.projectId} onChange={(event) => setDraft({ ...draft, projectId: Number(event.target.value) })}>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+              </label>
+              <label className="dialog-field">
+                <span>开始时间</span>
+                <input aria-label="开始时间" type="datetime-local" value={draft.start} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
+              </label>
+              <label className="dialog-field">
+                <span>结束时间</span>
+                <input aria-label="结束时间" type="datetime-local" value={draft.end} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
+              </label>
+              {draftError && <p className="error-message" role="alert">{draftError}</p>}
+              <div className="dialog-actions">
+                <Dialog.Close asChild><button className="dialog-button" type="button">取消</button></Dialog.Close>
+                <button className="dialog-button primary" type="button" disabled={!isSegmentDraftValid(draft.start, draft.end)} onClick={() => void submitDraft()}>保存</button>
+              </div>
+            </>}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <Dialog.Root open={deleteTarget !== null} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteError(null); } }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="segment-dialog">
+            <Dialog.Title>删除记录</Dialog.Title>
+            <Dialog.Description>确定删除这段记录吗？删除后无法恢复。</Dialog.Description>
+            {deleteError && <p className="error-message" role="alert">{deleteError}</p>}
+            <div className="dialog-actions">
+              <Dialog.Close asChild><button className="dialog-button" type="button">取消</button></Dialog.Close>
+              <button className="dialog-button danger" type="button" onClick={() => void confirmDelete()}>确认删除</button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </main>
   );
 }

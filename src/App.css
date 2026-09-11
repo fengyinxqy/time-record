@@ -173,6 +173,14 @@ h1 { margin: 0; color: var(--text); font-size: 20px; font-weight: 600; letter-sp
 .settings-list { margin-top: 24px; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--card-shadow); overflow: hidden; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; background: var(--surface); }
 .settings-row + .settings-row { border-top: 1px solid var(--border); }
+.update-section { padding: 16px; background: var(--surface); }
+.settings-row + .update-section,
+.update-section + .settings-row { border-top: 1px solid var(--border); }
+.update-status { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
+.update-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.update-button, .update-notice { border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface-raised); color: var(--text); padding: 7px 9px; font-size: 12px; }
+.update-button:disabled { cursor: wait; opacity: .7; }
+.update-notice { width: 100%; margin: 12px 0 0; text-align: left; }
 .settings-copy strong, .settings-copy span { display: block; }
 .settings-copy strong { color: var(--text); font-size: 13px; font-weight: 600; }
 .settings-copy span { margin-top: 4px; color: var(--muted); font-size: 11px; }

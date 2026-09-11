@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Dialog, Popover, Switch } from "radix-ui";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
@@ -11,6 +12,8 @@ import { resolveViewMode, type ViewMode } from "./viewMode";
 import { isExportRangeValid, segmentEndLabel } from "./historyModel";
 import { archivedQuickSelects } from "./archiveSuggest";
 import { DailyTimeline } from "./DailyTimeline";
+import { UpdateSection } from "./UpdateSection";
+import { getLatestRelease, isUpdateAvailable, type ReleaseInfo } from "./updateModel";
 import {
   initialStartupSettings,
   startupSettingsReducer,
@@ -76,7 +79,7 @@ function projectExists(name: string, projects: Project[]): boolean {
   );
 }
 
-function TimerWindow() {
+export function TimerWindow() {
   const [timer, dispatch] = useReducer(timerReducer, initialTimerState);
   const [projects, setProjects] = useState<Project[]>([]);
   const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
@@ -87,6 +90,7 @@ function TimerWindow() {
   const [archiveTarget, setArchiveTarget] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
+  const [updateRelease, setUpdateRelease] = useState<ReleaseInfo | null>(null);
 
   const refresh = useCallback(async () => {
     const today = localDateKey(new Date());
@@ -133,6 +137,20 @@ function TimerWindow() {
       window.clearInterval(interval);
     };
   }, [refresh, timer.activeSegment]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([getVersion(), getLatestRelease()])
+      .then(([version, release]) => {
+        if (active && isUpdateAvailable(version, release)) {
+          setUpdateRelease(release);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const togglePinned = async () => {
     const nextValue = !pinned;
@@ -247,6 +265,16 @@ function TimerWindow() {
           <button className="icon-button" onClick={() => void showSettings()}>设置</button>
         </div>
       </header>
+
+      {updateRelease && (
+        <button
+          className="update-notice"
+          aria-label="查看更新"
+          onClick={() => void showSettings()}
+        >
+          发现新版本 v{updateRelease.version}，查看更新
+        </button>
+      )}
 
       <section className="project-list">
         {projects.map((project) => {
@@ -570,6 +598,7 @@ function SettingsWindow({ theme }: { theme: ReturnType<typeof useTheme> }) {
             onCheckedChange={() => void updateSilentStart()}
           ><Switch.Thumb className="toggle-thumb" /></Switch.Root>
         </div>
+        <UpdateSection />
       </section>
       {theme.themeError && <p className="error-message" role="alert">{theme.themeError}</p>}
       {settings.error && <p className="error-message">{settings.error}</p>}

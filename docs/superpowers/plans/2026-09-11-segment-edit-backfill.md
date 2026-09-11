@@ -26,7 +26,7 @@
 | `src/App.css` | 对话框字段与行内按钮样式 | 修改 |
 | `README.md` | 功能列表与「尚未支持补录」的说明 | 修改 |
 
-后端错误码（前后端契约，全部为稳定字符串）：`segment_range_invalid`、`segment_in_future`、`project_not_found`、`segment_not_found`、`segment_active`、`segment_overlap`。
+后端错误码（前后端契约，全部为稳定字符串）：`segment_datetime_invalid`、`segment_range_invalid`、`segment_in_future`、`project_not_found`、`segment_not_found`、`segment_active`、`segment_overlap`。其中 `segment_datetime_invalid` 专用于**解析失败**，`segment_range_invalid` 专用于 db 层的**区间反转**。
 
 ---
 
@@ -475,9 +475,22 @@ git commit -m "feat: update and delete time segments"
             Ok((1_788_312_600, 1_788_315_300))
         );
         assert_eq!(
-            parse_segment_bounds("nope", "2026-09-02T10:15", 8).unwrap_err(),
-            "segment_range_invalid"
+            parse_segment_bounds("2026-09-02T00:00", "2026-09-02T23:59", 8),
+            Ok((1_788_278_400, 1_788_364_740))
         );
+        assert_eq!(
+            parse_segment_bounds("nope", "2026-09-02T10:15", 8).unwrap_err(),
+            "segment_datetime_invalid"
+        );
+        assert_eq!(
+            parse_segment_bounds("2026-09-02T09:30", "nope", 8).unwrap_err(),
+            "segment_datetime_invalid"
+        );
+        assert_eq!(
+            parse_segment_bounds("2026-13-01T09:00", "2026-09-02T10:15", 8).unwrap_err(),
+            "segment_datetime_invalid"
+        );
+        assert!(parse_segment_bounds("2026-09-02T10:15", "2026-09-02T09:30", 8).is_ok());
     }
 ```
 
@@ -497,9 +510,9 @@ fn parse_segment_bounds(
     timezone_offset_hours: i32,
 ) -> Result<(i64, i64), String> {
     let started_at = domain::utc_datetime_to_utc(start, timezone_offset_hours)
-        .ok_or_else(|| "segment_range_invalid".to_string())?;
+        .ok_or_else(|| "segment_datetime_invalid".to_string())?;
     let ended_at = domain::utc_datetime_to_utc(end, timezone_offset_hours)
-        .ok_or_else(|| "segment_range_invalid".to_string())?;
+        .ok_or_else(|| "segment_datetime_invalid".to_string())?;
     Ok((started_at, ended_at))
 }
 
@@ -636,6 +649,7 @@ describe("defaultSegmentDraft", () => {
 
 describe("segmentEditErrorMessage", () => {
   it("maps known error codes to Chinese", () => {
+    expect(segmentEditErrorMessage("segment_datetime_invalid")).toBe("时间格式不正确");
     expect(segmentEditErrorMessage("segment_range_invalid")).toBe("开始时间必须早于结束时间");
     expect(segmentEditErrorMessage("segment_in_future")).toBe("不能补录尚未发生的时间");
     expect(segmentEditErrorMessage("project_not_found")).toBe("所选项目不存在");
@@ -706,6 +720,7 @@ export function defaultSegmentDraft(
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
+  segment_datetime_invalid: "时间格式不正确",
   segment_range_invalid: "开始时间必须早于结束时间",
   segment_in_future: "不能补录尚未发生的时间",
   project_not_found: "所选项目不存在",

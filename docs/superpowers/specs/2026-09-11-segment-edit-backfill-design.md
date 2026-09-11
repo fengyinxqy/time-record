@@ -55,7 +55,7 @@
 
 | # | 规则 | 错误码 | 适用命令 |
 | --- | --- | --- | --- |
-| R1 | `start` / `end` 能被解析为合法的 `datetime-local` 值 | `segment_range_invalid` | create, update |
+| R1 | `start` / `end` 能被解析为合法的 `datetime-local` 值 | `segment_datetime_invalid` | create, update |
 | R2 | `end > start` | `segment_range_invalid` | create, update |
 | R3 | `end <= now`（`now` 取后端 `now_seconds()`）；禁止补录尚未发生的时段，同时拦截把年份填错这类手滑 | `segment_in_future` | create, update |
 | R4 | 目标项目存在。**归档项目允许作为目标**——历史视图本就展示归档项目的记录，补录同样的项目应当被允许 | `project_not_found` | create, update |
@@ -81,12 +81,15 @@ LIMIT 1
 
 | 错误码 | 界面提示 |
 | --- | --- |
+| `segment_datetime_invalid` | 时间格式不正确 |
 | `segment_range_invalid` | 开始时间必须早于结束时间 |
 | `segment_in_future` | 不能补录尚未发生的时间 |
 | `project_not_found` | 所选项目不存在 |
 | `segment_not_found` | 这段记录已不存在，请刷新后重试 |
 | `segment_active` | 请先暂停计时，再编辑这段记录 |
 | `segment_overlap` | 该时段与已有记录重叠 |
+
+`segment_datetime_invalid` 与 `segment_range_invalid` 分开是必要的：前端的即时校验正则是 `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$`，它比后端解析更宽松（例如 `2026-13-01T09:00` 能通过正则，却因月份越界而解析失败）。若两者共用一个错误码，这类型输入会被显示成「开始时间必须早于结束时间」，与实际原因不符。
 
 ## 界面与数据流
 

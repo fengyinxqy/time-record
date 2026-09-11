@@ -1010,6 +1010,7 @@ mod tests {
         let second = db.create_segment(project.id, 3_000, 4_000, 10_000).unwrap();
 
         assert_eq!(second.started_at, 3_000);
+        assert_eq!(db.segments_between(0, 20_000).unwrap().len(), 2);
     }
 
     #[test]
@@ -1023,5 +1024,66 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, "segment_overlap");
+    }
+
+    #[test]
+    fn allows_a_backfill_ending_exactly_at_now() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+
+        let created = db.create_segment(project.id, 2_000, 3_000, 3_000).unwrap();
+
+        assert_eq!(created.ended_at, Some(3_000));
+    }
+
+    #[test]
+    fn rejects_a_backfill_that_fully_contains_an_existing_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .create_segment(project.id, 1_500, 4_000, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_overlap");
+    }
+
+    #[test]
+    fn rejects_a_backfill_that_falls_inside_an_existing_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .create_segment(project.id, 2_200, 2_800, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_overlap");
+    }
+
+    #[test]
+    fn rejects_a_backfill_that_overlaps_another_projects_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let first = db.create_project(project("写代码"), 1_000).unwrap();
+        let second = db.create_project(project("阅读"), 1_100).unwrap();
+        db.create_segment(first.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .create_segment(second.id, 2_500, 3_500, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_overlap");
+    }
+
+    #[test]
+    fn allows_a_backfill_that_ends_when_the_next_segment_starts() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        db.create_segment(project.id, 3_000, 4_000, 10_000).unwrap();
+
+        let earlier = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        assert_eq!(earlier.ended_at, Some(3_000));
     }
 }

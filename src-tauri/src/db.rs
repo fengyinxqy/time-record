@@ -441,6 +441,49 @@ impl Database {
             .ok_or_else(|| "created segment missing".to_string())
     }
 
+    pub fn update_segment(
+        &self,
+        id: i64,
+        project_id: i64,
+        started_at: i64,
+        ended_at: i64,
+        now: i64,
+    ) -> Result<TimeSegment, String> {
+        self.validate_segment_bounds(project_id, started_at, ended_at, now)?;
+        let Some(existing) = self.segment_by_id(id)? else {
+            return Err("segment_not_found".to_string());
+        };
+        if existing.ended_at.is_none() {
+            return Err("segment_active".to_string());
+        }
+        if self.segment_overlaps(started_at, ended_at, Some(id))? {
+            return Err("segment_overlap".to_string());
+        }
+        self.connection
+            .execute(
+                "UPDATE time_segments
+                 SET project_id = ?1, started_at = ?2, ended_at = ?3, updated_at = ?4
+                 WHERE id = ?5",
+                params![project_id, started_at, ended_at, now, id],
+            )
+            .map_err(|error| error.to_string())?;
+        self.segment_by_id(id)?
+            .ok_or_else(|| "updated segment missing".to_string())
+    }
+
+    pub fn delete_segment(&self, id: i64) -> Result<(), String> {
+        let Some(existing) = self.segment_by_id(id)? else {
+            return Err("segment_not_found".to_string());
+        };
+        if existing.ended_at.is_none() {
+            return Err("segment_active".to_string());
+        }
+        self.connection
+            .execute("DELETE FROM time_segments WHERE id = ?1", params![id])
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     pub fn active_segment(&self) -> Result<Option<TimeSegment>, String> {
         self.connection
             .query_row(
@@ -1096,5 +1139,135 @@ mod tests {
         let earlier = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
 
         assert_eq!(earlier.ended_at, Some(3_000));
+    }
+
+    #[test]
+    fn updates_a_segment_project_and_bounds() {
+        let db = Database::open_in_memory().unwrap();
+        let first = db.create_project(project("写代码"), 1_000).unwrap();
+        let second = db.create_project(project("阅读"), 1_100).unwrap();
+        let created = db.create_segment(first.id, 2_000, 3_000, 10_000).unwrap();
+
+        let updated = db
+            .update_segment(created.id, second.id, 2_500, 4_000, 11_000)
+            .unwrap();
+
+        assert_eq!(updated.id, created.id);
+        assert_eq!(updated.project_id, second.id);
+        assert_eq!(updated.started_at, 2_500);
+        assert_eq!(updated.ended_at, Some(4_000));
+        assert_eq!(updated.created_at, created.created_at);
+        assert_eq!(updated.updated_at, 11_000);
+    }
+
+    #[test]
+    fn editing_a_segment_does_not_treat_itself_as_an_overlap() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let created = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let updated = db
+            .update_segment(created.id, project.id, 2_100, 3_100, 11_000)
+            .unwrap();
+
+        assert_eq!(updated.started_at, 2_100);
+    }
+
+    #[test]
+    fn rejects_an_update_that_would_overlap_another_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+        let later = db.create_segment(project.id, 5_000, 6_000, 10_000).unwrap();
+
+        let err = db
+            .update_segment(later.id, project.id, 2_500, 3_500, 11_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_overlap");
+    }
+
+    #[test]
+    fn rejects_an_update_that_reverses_the_bounds() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let created = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .update_segment(created.id, project.id, 3_000, 2_000, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_range_invalid");
+    }
+
+    #[test]
+    fn rejects_an_update_ending_in_the_future() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let created = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .update_segment(created.id, project.id, 2_000, 3_000, 2_500)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_in_future");
+    }
+
+    #[test]
+    fn rejects_an_update_to_an_unknown_project() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let created = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .update_segment(created.id, 99, 2_000, 3_000, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "project_not_found");
+    }
+
+    #[test]
+    fn rejects_updating_a_missing_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+
+        let err = db
+            .update_segment(99, project.id, 2_000, 3_000, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_not_found");
+    }
+
+    #[test]
+    fn rejects_editing_or_deleting_the_running_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let running = db.start_project(project.id, 2_000).unwrap();
+
+        assert_eq!(
+            db.update_segment(running.id, project.id, 2_000, 2_500, 3_000)
+                .unwrap_err(),
+            "segment_active"
+        );
+        assert_eq!(db.delete_segment(running.id).unwrap_err(), "segment_active");
+    }
+
+    #[test]
+    fn deletes_a_segment_from_history_and_exports() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        let created = db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        db.delete_segment(created.id).unwrap();
+
+        assert!(db.segments_between(0, 20_000).unwrap().is_empty());
+        assert!(db.export_range(0, 20_000).unwrap().time_segments.is_empty());
+    }
+
+    #[test]
+    fn rejects_deleting_a_missing_segment() {
+        let db = Database::open_in_memory().unwrap();
+
+        assert_eq!(db.delete_segment(99).unwrap_err(), "segment_not_found");
     }
 }

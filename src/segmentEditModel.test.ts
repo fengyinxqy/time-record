@@ -16,6 +16,10 @@ describe("toDateTimeLocal", () => {
     const date = new Date(2026, 8, 11, 23, 0, 0);
     expect(toDateTimeLocal(date.getTime() / 1000)).toBe("2026-09-11T23:00");
   });
+
+  it("formats the unix epoch as a valid local datetime", () => {
+    expect(toDateTimeLocal(0)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  });
 });
 
 describe("isSegmentDraftValid", () => {
@@ -31,6 +35,10 @@ describe("isSegmentDraftValid", () => {
   it("rejects malformed values", () => {
     expect(isSegmentDraftValid("", "2026-09-02T10:00")).toBe(false);
     expect(isSegmentDraftValid("2026-09-02T09:00", "2026-09-02")).toBe(false);
+  });
+
+  it("accepts values that carry seconds", () => {
+    expect(isSegmentDraftValid("2026-09-02T09:00:00", "2026-09-02T10:00:30")).toBe(true);
   });
 });
 
@@ -58,6 +66,38 @@ describe("defaultSegmentDraft", () => {
       end: "2026-09-11T10:00",
     });
   });
+
+  it("clamps the default window to the selected day when today is very early", () => {
+    const now = new Date(2026, 8, 11, 0, 30, 0).getTime() / 1000;
+    expect(defaultSegmentDraft("2026-09-11", now)).toEqual({
+      start: "2026-09-11T00:00",
+      end: "2026-09-11T00:30",
+    });
+  });
+
+  it("keeps the morning hour exactly at 10:00", () => {
+    const now = new Date(2026, 8, 11, 10, 0, 0).getTime() / 1000;
+    expect(defaultSegmentDraft("2026-09-11", now)).toEqual({
+      start: "2026-09-11T09:00",
+      end: "2026-09-11T10:00",
+    });
+  });
+
+  it("truncates seconds from now when clamping", () => {
+    const now = new Date(2026, 8, 11, 8, 30, 45).getTime() / 1000;
+    expect(defaultSegmentDraft("2026-09-11", now)).toEqual({
+      start: "2026-09-11T07:30",
+      end: "2026-09-11T08:30",
+    });
+  });
+
+  it("returns the morning hour for a future date, leaving gating to the caller", () => {
+    const now = new Date(2026, 8, 11, 15, 0, 0).getTime() / 1000;
+    expect(defaultSegmentDraft("2026-09-12", now)).toEqual({
+      start: "2026-09-12T09:00",
+      end: "2026-09-12T10:00",
+    });
+  });
 });
 
 describe("segmentEditErrorMessage", () => {
@@ -74,5 +114,10 @@ describe("segmentEditErrorMessage", () => {
   it("falls back to the raw string then a generic message", () => {
     expect(segmentEditErrorMessage("boom")).toBe("boom");
     expect(segmentEditErrorMessage(new Error("x"))).toBe("操作失败，请稍后重试");
+  });
+
+  it("does not fall through to Object.prototype members", () => {
+    expect(segmentEditErrorMessage("toString")).toBe("toString");
+    expect(segmentEditErrorMessage("constructor")).toBe("constructor");
   });
 });

@@ -150,6 +150,48 @@ fn get_segments_for_date(
     database(&state)?.segments_between(start, end)
 }
 
+fn parse_segment_bounds(
+    start: &str,
+    end: &str,
+    timezone_offset_hours: i32,
+) -> Result<(i64, i64), String> {
+    let started_at = domain::utc_datetime_to_utc(start, timezone_offset_hours)
+        .ok_or_else(|| "segment_range_invalid".to_string())?;
+    let ended_at = domain::utc_datetime_to_utc(end, timezone_offset_hours)
+        .ok_or_else(|| "segment_range_invalid".to_string())?;
+    Ok((started_at, ended_at))
+}
+
+#[tauri::command]
+fn create_segment(
+    project_id: i64,
+    start: String,
+    end: String,
+    timezone_offset_hours: i32,
+    state: State<'_, AppState>,
+) -> Result<TimeSegment, String> {
+    let (started_at, ended_at) = parse_segment_bounds(&start, &end, timezone_offset_hours)?;
+    database(&state)?.create_segment(project_id, started_at, ended_at, now_seconds())
+}
+
+#[tauri::command]
+fn update_segment(
+    segment_id: i64,
+    project_id: i64,
+    start: String,
+    end: String,
+    timezone_offset_hours: i32,
+    state: State<'_, AppState>,
+) -> Result<TimeSegment, String> {
+    let (started_at, ended_at) = parse_segment_bounds(&start, &end, timezone_offset_hours)?;
+    database(&state)?.update_segment(segment_id, project_id, started_at, ended_at, now_seconds())
+}
+
+#[tauri::command]
+fn delete_segment(segment_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    database(&state)?.delete_segment(segment_id)
+}
+
 fn export_filename(start: &str, end: &str) -> String {
     let safe_start = start.replace(':', "-");
     let safe_end = end.replace(':', "-");
@@ -406,6 +448,9 @@ pub fn run() {
             pause_timer,
             heartbeat,
             get_segments_for_date,
+            create_segment,
+            update_segment,
+            delete_segment,
             export_data_to_file,
             set_window_theme,
             open_history_window,
@@ -432,7 +477,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{export_filename, title_bar_attributes, valid_startup_executable, StartupSettings};
+    use super::{
+        export_filename, parse_segment_bounds, title_bar_attributes, valid_startup_executable,
+        StartupSettings,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -511,6 +559,18 @@ mod tests {
         assert_ne!(
             title_bar_attributes(false)[2],
             title_bar_attributes(true)[2]
+        );
+    }
+
+    #[test]
+    fn parses_segment_bounds_and_rejects_bad_datetimes() {
+        assert_eq!(
+            parse_segment_bounds("2026-09-02T09:30", "2026-09-02T10:15", 8),
+            Ok((1_788_312_600, 1_788_315_300))
+        );
+        assert_eq!(
+            parse_segment_bounds("nope", "2026-09-02T10:15", 8).unwrap_err(),
+            "segment_range_invalid"
         );
     }
 }

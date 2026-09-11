@@ -156,9 +156,9 @@ fn parse_segment_bounds(
     timezone_offset_hours: i32,
 ) -> Result<(i64, i64), String> {
     let started_at = domain::utc_datetime_to_utc(start, timezone_offset_hours)
-        .ok_or_else(|| "segment_range_invalid".to_string())?;
+        .ok_or_else(|| "segment_datetime_invalid".to_string())?;
     let ended_at = domain::utc_datetime_to_utc(end, timezone_offset_hours)
-        .ok_or_else(|| "segment_range_invalid".to_string())?;
+        .ok_or_else(|| "segment_datetime_invalid".to_string())?;
     Ok((started_at, ended_at))
 }
 
@@ -569,9 +569,22 @@ mod tests {
             Ok((1_788_312_600, 1_788_315_300))
         );
         assert_eq!(
-            parse_segment_bounds("nope", "2026-09-02T10:15", 8).unwrap_err(),
-            "segment_range_invalid"
+            parse_segment_bounds("2026-09-02T00:00", "2026-09-02T23:59", 8),
+            Ok((1_788_278_400, 1_788_364_740))
         );
+        assert_eq!(
+            parse_segment_bounds("nope", "2026-09-02T10:15", 8).unwrap_err(),
+            "segment_datetime_invalid"
+        );
+        assert_eq!(
+            parse_segment_bounds("2026-09-02T09:30", "nope", 8).unwrap_err(),
+            "segment_datetime_invalid"
+        );
+        assert_eq!(
+            parse_segment_bounds("2026-13-01T09:00", "2026-09-02T10:15", 8).unwrap_err(),
+            "segment_datetime_invalid"
+        );
+        assert!(parse_segment_bounds("2026-09-02T10:15", "2026-09-02T09:30", 8).is_ok());
     }
 }
 

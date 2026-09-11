@@ -378,6 +378,58 @@ impl Database {
         self.segment_by_id(active.id)
     }
 
+    fn segment_overlaps(
+        &self,
+        started_at: i64,
+        ended_at: i64,
+        exclude_id: Option<i64>,
+    ) -> Result<bool, String> {
+        self.connection
+            .query_row(
+                "SELECT 1 FROM time_segments
+                 WHERE id != ?3
+                   AND started_at < ?2
+                   AND (ended_at IS NULL OR ended_at > ?1)
+                 LIMIT 1",
+                params![started_at, ended_at, exclude_id.unwrap_or(-1)],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|row| row.is_some())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn create_segment(
+        &self,
+        project_id: i64,
+        started_at: i64,
+        ended_at: i64,
+        now: i64,
+    ) -> Result<TimeSegment, String> {
+        if ended_at <= started_at {
+            return Err("segment_range_invalid".to_string());
+        }
+        if ended_at > now {
+            return Err("segment_in_future".to_string());
+        }
+        if self.project_by_id(project_id)?.is_none() {
+            return Err("project_not_found".to_string());
+        }
+        if self.segment_overlaps(started_at, ended_at, None)? {
+            return Err("segment_overlap".to_string());
+        }
+        self.connection
+            .execute(
+                "INSERT INTO time_segments (project_id, started_at, ended_at, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?4)",
+                params![project_id, started_at, ended_at, now],
+            )
+            .map_err(|error| error.to_string())?;
+        let id = self.connection.last_insert_rowid();
+        self.segment_by_id(id)?
+            .ok_or_else(|| "created segment missing".to_string())
+    }
+
     pub fn active_segment(&self) -> Result<Option<TimeSegment>, String> {
         self.connection
             .query_row(
@@ -874,5 +926,102 @@ mod tests {
         assert_eq!(data.time_segments[0].started_at, 9_000);
         assert_eq!(data.time_segments[0].ended_at, Some(12_000));
         assert_eq!(data.projects, vec![spanning]);
+    }
+
+    #[test]
+    fn creates_a_completed_segment_without_activating_it() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("补录"), 1_000).unwrap();
+
+        let created = db.create_segment(project.id, 2_000, 3_600, 10_000).unwrap();
+
+        assert_eq!(created.started_at, 2_000);
+        assert_eq!(created.ended_at, Some(3_600));
+        assert_eq!(created.project_id, project.id);
+        assert!(db.active_segment().unwrap().is_none());
+        assert_eq!(db.segments_between(0, 20_000).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn rejects_a_segment_whose_end_is_not_after_its_start() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+
+        let err = db
+            .create_segment(project.id, 3_000, 3_000, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_range_invalid");
+    }
+
+    #[test]
+    fn rejects_a_backfill_ending_in_the_future() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+
+        let err = db
+            .create_segment(project.id, 2_000, 3_000, 2_500)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_in_future");
+    }
+
+    #[test]
+    fn rejects_a_backfill_for_an_unknown_project() {
+        let db = Database::open_in_memory().unwrap();
+
+        let err = db.create_segment(99, 2_000, 3_000, 10_000).unwrap_err();
+
+        assert_eq!(err, "project_not_found");
+    }
+
+    #[test]
+    fn allows_backfilling_an_archived_project() {
+        let db = Database::open_in_memory().unwrap();
+        let archived_project = db.create_project(project("旧项目"), 1_000).unwrap();
+        db.archive_project(archived_project.id, 1_100).unwrap();
+
+        let created = db
+            .create_segment(archived_project.id, 2_000, 3_000, 10_000)
+            .unwrap();
+
+        assert_eq!(created.project_id, archived_project.id);
+    }
+
+    #[test]
+    fn rejects_a_backfill_that_overlaps_an_existing_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let err = db
+            .create_segment(project.id, 2_500, 3_500, 10_000)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_overlap");
+    }
+
+    #[test]
+    fn allows_adjacent_segments_that_only_touch() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("写代码"), 1_000).unwrap();
+        db.create_segment(project.id, 2_000, 3_000, 10_000).unwrap();
+
+        let second = db.create_segment(project.id, 3_000, 4_000, 10_000).unwrap();
+
+        assert_eq!(second.started_at, 3_000);
+    }
+
+    #[test]
+    fn rejects_a_backfill_over_the_running_segment() {
+        let db = Database::open_in_memory().unwrap();
+        let project = db.create_project(project("进行中"), 1_000).unwrap();
+        db.start_project(project.id, 2_000).unwrap();
+
+        let err = db
+            .create_segment(project.id, 2_100, 2_200, 2_300)
+            .unwrap_err();
+
+        assert_eq!(err, "segment_overlap");
     }
 }

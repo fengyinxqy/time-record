@@ -143,7 +143,10 @@ mod tests {
 
     #[test]
     fn converts_a_local_datetime_to_utc_seconds_exactly() {
-        assert_eq!(utc_datetime_to_utc("2026-09-02T09:30", 8), Some(1_788_312_600));
+        assert_eq!(
+            utc_datetime_to_utc("2026-09-02T09:30", 8),
+            Some(1_788_312_600)
+        );
         assert_eq!(utc_datetime_to_utc("not-a-datetime", 8), None);
     }
 }

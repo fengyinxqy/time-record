@@ -77,7 +77,7 @@ pub fn utc_datetime_range_bounds(
     Some((start_utc, end_utc + SECONDS_PER_MINUTE))
 }
 
-fn utc_datetime_to_utc(value: &str, timezone_offset_hours: i32) -> Option<i64> {
+pub fn utc_datetime_to_utc(value: &str, timezone_offset_hours: i32) -> Option<i64> {
     let (date, time) = value.split_once('T')?;
     let (hour, minute) = time.split_once(':')?;
     if time.matches(':').count() != 1 {
@@ -94,7 +94,10 @@ fn utc_datetime_to_utc(value: &str, timezone_offset_hours: i32) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_duration, utc_datetime_range_bounds, utc_day_bounds, utc_range_bounds};
+    use super::{
+        format_duration, utc_datetime_range_bounds, utc_datetime_to_utc, utc_day_bounds,
+        utc_range_bounds,
+    };
 
     #[test]
     fn formats_duration_as_hours_minutes_and_seconds() {
@@ -136,5 +139,11 @@ mod tests {
     fn rejects_invalid_range_dates() {
         assert_eq!(utc_range_bounds("2026-02-30", "2026-09-02", 8), None);
         assert_eq!(utc_range_bounds("not-a-date", "2026-09-02", 8), None);
+    }
+
+    #[test]
+    fn converts_a_local_datetime_to_utc_seconds_exactly() {
+        assert_eq!(utc_datetime_to_utc("2026-09-02T09:30", 8), Some(1_788_312_600));
+        assert_eq!(utc_datetime_to_utc("not-a-datetime", 8), None);
     }
 }

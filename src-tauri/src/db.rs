@@ -399,13 +399,13 @@ impl Database {
             .map_err(|error| error.to_string())
     }
 
-    pub fn create_segment(
+    fn validate_segment_bounds(
         &self,
         project_id: i64,
         started_at: i64,
         ended_at: i64,
         now: i64,
-    ) -> Result<TimeSegment, String> {
+    ) -> Result<(), String> {
         if ended_at <= started_at {
             return Err("segment_range_invalid".to_string());
         }
@@ -415,6 +415,17 @@ impl Database {
         if self.project_by_id(project_id)?.is_none() {
             return Err("project_not_found".to_string());
         }
+        Ok(())
+    }
+
+    pub fn create_segment(
+        &self,
+        project_id: i64,
+        started_at: i64,
+        ended_at: i64,
+        now: i64,
+    ) -> Result<TimeSegment, String> {
+        self.validate_segment_bounds(project_id, started_at, ended_at, now)?;
         if self.segment_overlaps(started_at, ended_at, None)? {
             return Err("segment_overlap".to_string());
         }

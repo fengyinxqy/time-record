@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
+import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { UpdateSection } from "./UpdateSection";
 
@@ -24,6 +25,7 @@ it("shows a newer release and opens its GitHub release page", async () => {
   const user = userEvent.setup();
   render(<UpdateSection />);
 
+  expect(await screen.findByText("当前版本：0.1.0")).toBeInTheDocument();
   await user.click(await screen.findByRole("button", { name: "检查更新" }));
 
   expect(await screen.findByText("发现新版本 v0.2.0")).toBeInTheDocument();
@@ -55,4 +57,18 @@ it("reports latest, disables while checking, and reports a manual network failur
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
   await user.click(screen.getByRole("button", { name: "检查更新" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("检查更新失败，请稍后重试");
+});
+
+it("shows an unknown version after a load failure and allows a manual update check", async () => {
+  vi.mocked(getVersion).mockRejectedValueOnce(new Error("version unavailable"));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(validRelease))));
+  const user = userEvent.setup();
+  render(<UpdateSection />);
+
+  expect(await screen.findByText("当前版本：未知")).toBeInTheDocument();
+  const checkButton = screen.getByRole("button", { name: "检查更新" });
+  expect(checkButton).toBeEnabled();
+
+  await user.click(checkButton);
+  expect(await screen.findByText("发现新版本 v0.2.0")).toBeInTheDocument();
 });

@@ -418,6 +418,16 @@ impl Database {
         Ok(())
     }
 
+    fn editable_segment(&self, id: i64) -> Result<TimeSegment, String> {
+        let Some(existing) = self.segment_by_id(id)? else {
+            return Err("segment_not_found".to_string());
+        };
+        if existing.ended_at.is_none() {
+            return Err("segment_active".to_string());
+        }
+        Ok(existing)
+    }
+
     pub fn create_segment(
         &self,
         project_id: i64,
@@ -450,12 +460,7 @@ impl Database {
         now: i64,
     ) -> Result<TimeSegment, String> {
         self.validate_segment_bounds(project_id, started_at, ended_at, now)?;
-        let Some(existing) = self.segment_by_id(id)? else {
-            return Err("segment_not_found".to_string());
-        };
-        if existing.ended_at.is_none() {
-            return Err("segment_active".to_string());
-        }
+        self.editable_segment(id)?;
         if self.segment_overlaps(started_at, ended_at, Some(id))? {
             return Err("segment_overlap".to_string());
         }
@@ -472,12 +477,7 @@ impl Database {
     }
 
     pub fn delete_segment(&self, id: i64) -> Result<(), String> {
-        let Some(existing) = self.segment_by_id(id)? else {
-            return Err("segment_not_found".to_string());
-        };
-        if existing.ended_at.is_none() {
-            return Err("segment_active".to_string());
-        }
+        self.editable_segment(id)?;
         self.connection
             .execute("DELETE FROM time_segments WHERE id = ?1", params![id])
             .map_err(|error| error.to_string())?;

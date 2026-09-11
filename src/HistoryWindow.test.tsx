@@ -138,9 +138,9 @@ describe("HistoryWindow segment editing", () => {
       {
         id: 1,
         projectId: 1,
-        startedAt: harness.dayStartSeconds + 3600,
+        startedAt: harness.dayStartSeconds - 3600,
         endedAt: null,
-        createdAt: harness.dayStartSeconds,
+        createdAt: harness.dayStartSeconds - 3600,
       },
     ];
     renderHistory();

@@ -27,6 +27,18 @@ type TimerSnapshot = {
 };
 
 const COLORS = ["#a69bd6", "#86ad94", "#d9a071", "#d88fa4", "#86a9ce"];
+let timerStartupUpdatePromise: Promise<ReleaseInfo | null> | null = null;
+
+function getTimerStartupUpdate(): Promise<ReleaseInfo | null> {
+  if (timerStartupUpdatePromise === null) {
+    timerStartupUpdatePromise = Promise.all([getVersion(), getLatestRelease()])
+      .then(([version, release]) => (
+        isUpdateAvailable(version, release) ? release : null
+      ))
+      .catch(() => null);
+  }
+  return timerStartupUpdatePromise;
+}
 
 function friendlyError(error: unknown): string {
   return typeof error === "string" ? error : "操作失败，请稍后重试";
@@ -140,13 +152,12 @@ export function TimerWindow() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getVersion(), getLatestRelease()])
-      .then(([version, release]) => {
-        if (active && isUpdateAvailable(version, release)) {
+    void getTimerStartupUpdate()
+      .then((release) => {
+        if (active && release) {
           setUpdateRelease(release);
         }
-      })
-      .catch(() => undefined);
+      });
     return () => {
       active = false;
     };

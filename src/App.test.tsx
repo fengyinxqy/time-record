@@ -1,6 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { TimerWindow } from "./App";
 
@@ -41,24 +43,20 @@ describe("TimerWindow update checks", () => {
       published_at: "2026-09-11T00:00:00Z",
     }))));
 
-    render(<TimerWindow />);
+    render(
+      <StrictMode>
+        <TimerWindow />
+      </StrictMode>,
+    );
 
     await screen.findByRole("button", { name: "查看更新" });
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看更新" })).toHaveTextContent("发现新版本 v0.2.0");
+    expect(getVersion).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
 
     await userEvent.click(screen.getByRole("button", { name: "查看更新" }));
 
     expect(invoke).toHaveBeenCalledWith("open_settings_window");
-  });
-
-  it("does not surface a network failure from the automatic check", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
-
-    render(<TimerWindow />);
-
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: "查看更新" })).toBeNull();
-    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

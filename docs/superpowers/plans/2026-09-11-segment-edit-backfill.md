@@ -1173,6 +1173,15 @@ git add src/App.tsx src/App.css src/HistoryWindow.test.tsx
 git commit -m "feat: edit and backfill segments in history window"
 ```
 
+**评审后的加固（已随该任务落地）**：上面 Step 1–10 是最小可用版本，代码质量审查后追加了几项，实际提交里应同时包含：
+
+- `saving` / `deleting` 两个在途状态，防止双击重复提交（与本文件导出区既有的 `exporting` 约定一致）。
+- 两个 `datetime-local` 输入加 `max={toDateTimeLocal(now)}`，在原生控件层面提前约束未来时间。
+- 删除确认框显示具体是哪一段：`确定删除{deleteLabel}这段记录吗？`，其中 `deleteLabel` 由项目名与起止时刻拼出（对照归档确认框显示项目名的既有做法）。
+- 测试从 3 个扩到 6 个，补齐**编辑主路径**（`update_segment` 是否收到正确的 `segmentId`）、**失败时对话框保持打开并显示中文错误**、以及**进行中段的编辑/删除按钮被禁用**。测试夹具需用 `vi.hoisted` + 可变 `harness`（而非 `mockRejectedValueOnce`），避免 2 秒轮询消耗掉一次性 mock。
+
+因此该任务的最终预期是：单文件 6 passed、前端全量 66 passed。
+
 ---
 
 ## Task 7: 文档更新
